@@ -1,7 +1,13 @@
+use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+mod ingest;
+mod models;
+
+use ingest::{AnnotationRecord, GeneRecord};
+use crate::models::{Annotation, Gene};
+
+#[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Aspect {
     #[serde(rename = "F")]
     MolecularFunction,
@@ -11,7 +17,7 @@ pub enum Aspect {
     CellularComponent,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AnnotationStatus {
     KnownExperimental,
     KnownOther,
@@ -19,106 +25,124 @@ pub enum AnnotationStatus {
     Unannotated,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct AnnotationRecord {
-    pub db: String,
-    pub database_id: String,
-    pub db_object_symbol: String,
-    pub invert: String,
-    pub go_term: String,
-    pub reference: String,
-    pub evidence_code: String,
-    pub additional_evidence: String,
-    pub aspect: Aspect,
-    pub unique_gene_name: String,
-    pub alternative_gene_name: String,
-    pub gene_product_type: String,
-    pub taxon: String,
-    pub date: String,
-    pub assigned_by: String,
-    pub annotation_extension: String,
-    pub gene_product_form_id: String,
+#[derive(Debug)]
+pub struct IndexElement<'a, 'b> {
+    gene: &'a Gene,
+    annotations: HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'b Annotation>>>,
 }
 
-impl AnnotationRecord {
-    pub fn parse_from<R: Read>(reader: R) -> Result<Vec<Self>, ()> {
-        let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(b'\t')
-            .flexible(true)
-            .from_reader(reader);
-
-        let results: Vec<_> = csv_reader.deserialize::<Self>()
-            .filter_map(Result::ok)
-            .collect();
-
-        Ok(results)
-    }
+#[derive(Debug)]
+pub struct GeneIndex<'a, 'b> {
+    map: HashMap<&'a String, IndexElement<'a, 'b>>,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GeneRecord {
-    pub gene_id: String,
-    pub gene_product_type: String,
-}
+impl GeneIndex<'_, '_> {
+    pub fn from_records<'a, 'b>(genes: &'a [Gene], annotations: &'b [Annotation]) -> GeneIndex<'a, 'b> {
+        let mut map = HashMap::new();
 
-impl GeneRecord {
-    pub fn parse_from<R: Read>(reader: R) -> Result<Vec<Self>, ()> {
-        let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(b'\t')
-            .flexible(true)
-            .from_reader(reader);
+        for gene in genes {
+            let mut annotations = HashMap::new();
+            let index_element = IndexElement { gene, annotations };
+            map.insert(&gene.gene_id, index_element);
+        }
 
-        let results: Vec<_> = csv_reader.deserialize::<Self>()
-            .filter_map(Result::ok)
-            .collect();
+        for annotation in annotations {
+            let gene_id = annotation.gene_names.get(0).expect("should get gene name");
+            let gene_entry = map.get_mut(&*gene_id).expect("should find gene id");
 
-        Ok(results)
+            let annotations_by_aspect = gene_entry.annotations
+                .entry(annotation.aspect)
+                .or_insert(HashMap::new());
+
+            let annotations_by_status = annotations_by_aspect
+                .entry(annotation.annotation_status)
+                .or_insert(HashSet::new());
+
+            annotations_by_status.insert(annotation);
+        }
+
+        GeneIndex { map }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
-    fn test_parse_annotation() {
-        let annotation_string = "TAIR	locus:2031476	ENO1		GO:0000015	TAIR:AnalysisReference:501756966	IEA	InterPro:IPR000941	C	AT1G74030	AT1G74030|ENO1|enolase 1|F2P9.10|F2P9_10	protein	taxon:3702	20190907	InterPro		TAIR:locus:2031476";
-        let mut reader = Cursor::new(annotation_string);
-        let annotations = AnnotationRecord::parse_from(&mut reader).unwrap();
-        let expected = AnnotationRecord {
-            db: "TAIR".to_string(),
-            database_id: "locus:2031476".to_string(),
-            db_object_symbol: "ENO1".to_string(),
-            invert: "".to_string(),
-            go_term: "GO:0000015".to_string(),
-            reference: "TAIR:AnalysisReference:501756966".to_string(),
-            evidence_code: "IEA".to_string(),
-            additional_evidence: "InterPro:IPR000941".to_string(),
-            aspect: Aspect::CellularComponent,
-            unique_gene_name: "AT1G74030".to_string(),
-            alternative_gene_name: "AT1G74030|ENO1|enolase 1|F2P9.10|F2P9_10".to_string(),
-            gene_product_type: "protein".to_string(),
-            taxon: "taxon:3702".to_string(),
-            date: "20190907".to_string(),
-            assigned_by: "InterPro".to_string(),
-            annotation_extension: "".to_string(),
-            gene_product_form_id: "TAIR:locus:2031476".to_string(),
-        };
-        assert_eq!(vec![expected], annotations);
-    }
+    fn test_gene_index() {
+        let genes: Vec<Gene> = vec![
+            Gene {
+                gene_id: "AT1G74030".to_string(),
+                gene_product_type: "protein".to_string(),
+            },
+            Gene {
+                gene_id: "AT1G74040".to_string(),
+                gene_product_type: "protein".to_string(),
+            },
+        ];
 
-    #[test]
-    fn test_parse_gene() {
-        let gene_row = "AT1G01010	protein_coding";
-        let mut reader = Cursor::new(gene_row);
-        let genes = GeneRecord::parse_from(&mut reader).unwrap();
-        let expected = GeneRecord {
-            gene_id: "AT1G01010".to_string(),
-            gene_product_type: "protein_coding".to_string(),
-        };
-        assert_eq!(vec![expected], genes);
+        let annotations: Vec<Annotation> = vec![
+            Annotation {
+                db: "TAIR".to_string(),
+                database_id: "locus:2031476".to_string(),
+                db_object_symbol: "ENO1".to_string(),
+                invert: "".to_string(),
+                go_term: "GO:0000015".to_string(),
+                reference: "TAIR:AnalysisReference:501756966".to_string(),
+                evidence_code: "IEA".to_string(),
+                additional_evidence: "InterPro:IPR000941".to_string(),
+                aspect: Aspect::CellularComponent,
+                annotation_status: AnnotationStatus::KnownExperimental,
+                gene_names: vec!["AT1G74030".to_string()],
+                gene_product_type: "protein".to_string(),
+                taxon: "taxon:3702".to_string(),
+                date: "20190907".to_string(),
+                assigned_by: "InterPro".to_string(),
+                annotation_extension: "".to_string(),
+                gene_product_form_id: "TAIR:locus:2031476".to_string(),
+            },
+            Annotation {
+                db: "TAIR".to_string(),
+                database_id: "locus:2031476".to_string(),
+                db_object_symbol: "ENO1".to_string(),
+                invert: "".to_string(),
+                go_term: "GO:0000015".to_string(),
+                reference: "TAIR:AnalysisReference:501756966".to_string(),
+                evidence_code: "IEA".to_string(),
+                additional_evidence: "InterPro:IPR000941".to_string(),
+                aspect: Aspect::CellularComponent,
+                annotation_status: AnnotationStatus::KnownOther,
+                gene_names: vec!["AT1G74030".to_string()],
+                gene_product_type: "protein".to_string(),
+                taxon: "taxon:3702".to_string(),
+                date: "20190907".to_string(),
+                assigned_by: "InterPro".to_string(),
+                annotation_extension: "".to_string(),
+                gene_product_form_id: "TAIR:locus:2031476".to_string(),
+            },
+            Annotation {
+                db: "TAIR".to_string(),
+                database_id: "locus:2031476".to_string(),
+                db_object_symbol: "ENO1".to_string(),
+                invert: "".to_string(),
+                go_term: "GO:0000015".to_string(),
+                reference: "TAIR:AnalysisReference:501756966".to_string(),
+                evidence_code: "IEA".to_string(),
+                additional_evidence: "InterPro:IPR000941".to_string(),
+                aspect: Aspect::CellularComponent,
+                annotation_status: AnnotationStatus::Unknown,
+                gene_names: vec!["AT1G74040".to_string()],
+                gene_product_type: "protein".to_string(),
+                taxon: "taxon:3702".to_string(),
+                date: "20190907".to_string(),
+                assigned_by: "InterPro".to_string(),
+                annotation_extension: "".to_string(),
+                gene_product_form_id: "TAIR:locus:2031476".to_string(),
+            },
+        ];
+
+        let gene_index = GeneIndex::from_records(&genes, &annotations);
+        dbg!(gene_index);
     }
 }
