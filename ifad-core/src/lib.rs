@@ -1,10 +1,12 @@
+#![deny(warnings)]
+#![allow(dead_code)]
+
 use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 mod ingest;
 mod models;
 
-use ingest::{AnnotationRecord, GeneRecord};
 use crate::models::{Annotation, Gene};
 
 #[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -41,7 +43,7 @@ impl GeneIndex<'_, '_> {
         let mut map = HashMap::new();
 
         for gene in genes {
-            let mut annotations = HashMap::new();
+            let annotations = HashMap::new();
             let index_element = IndexElement { gene, annotations };
             map.insert(&gene.gene_id, index_element);
         }
@@ -52,11 +54,11 @@ impl GeneIndex<'_, '_> {
 
             let annotations_by_aspect = gene_entry.annotations
                 .entry(annotation.aspect)
-                .or_insert(HashMap::new());
+                .or_insert_with(HashMap::new);
 
             let annotations_by_status = annotations_by_aspect
                 .entry(annotation.annotation_status)
-                .or_insert(HashSet::new());
+                .or_insert_with(HashSet::new);
 
             annotations_by_status.insert(annotation);
         }
