@@ -27,43 +27,82 @@ pub enum AnnotationStatus {
     Unannotated,
 }
 
-#[derive(Debug)]
-pub struct IndexElement<'a, 'b> {
-    gene: &'a Gene,
-    annotations: HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'b Annotation>>>,
+type GeneIndex<'a> = HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'a Gene>>>;
+type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene, HashSet<&'b Annotation>)>;
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Index<'a, 'b> {
+    gene_index: GeneIndex<'a>,
+    anno_index: AnnoIndex<'a, 'b>,
 }
 
-#[derive(Debug)]
-pub struct GeneIndex<'a, 'b> {
-    map: HashMap<&'a String, IndexElement<'a, 'b>>,
-}
-
-impl GeneIndex<'_, '_> {
-    pub fn from_records<'a, 'b>(genes: &'a [Gene], annotations: &'b [Annotation]) -> GeneIndex<'a, 'b> {
-        let mut map = HashMap::new();
+impl Index<'_, '_> {
+    pub fn new<'a, 'b>(
+        genes: &'a [Gene],
+        annotations: &'b [Annotation]
+    ) -> Index<'a, 'b> {
+        let mut gene_index: GeneIndex = HashMap::new();
+        let mut anno_index: AnnoIndex = HashMap::new();
 
         for gene in genes {
-            let annotations = HashMap::new();
-            let index_element = IndexElement { gene, annotations };
-            map.insert(&gene.gene_id, index_element);
+            anno_index.insert(gene.gene_id.to_string(), (&gene, HashSet::new()));
         }
 
+        let mut known_other_index: GeneIndex = HashMap::new();
         for annotation in annotations {
-            let gene_id = annotation.gene_names.get(0).expect("should get gene name");
-            let gene_entry = map.get_mut(&*gene_id).expect("should find gene id");
+            let gene_id = annotation.gene_in(&anno_index);
+            let gene_id = match gene_id {
+                Some(gene_id) => gene_id,
+                None => {
+                    println!("No gene for annotation {:?}", annotation);
+                    continue;
+                },
+            };
+            let (gene, gene_annotations) = anno_index
+                .get_mut(&*gene_id).expect("should get gene");
+            gene_annotations.insert(annotation);
 
-            let annotations_by_aspect = gene_entry.annotations
+            let index_to_insert =
+                if annotation.annotation_status == AnnotationStatus::KnownOther {
+                    &mut known_other_index
+                } else {
+                    &mut gene_index
+                };
+
+            index_to_insert
                 .entry(annotation.aspect)
-                .or_insert_with(HashMap::new);
-
-            let annotations_by_status = annotations_by_aspect
+                .or_insert_with(HashMap::new)
                 .entry(annotation.annotation_status)
-                .or_insert_with(HashSet::new);
-
-            annotations_by_status.insert(annotation);
+                .or_insert_with(HashSet::new)
+                .insert(&*gene);
         }
 
-        GeneIndex { map }
+        let known_other_flat = known_other_index.into_iter()
+            .flat_map(|(aspect, by_status)| {
+                by_status.into_iter().flat_map(move |(_, genes)| {
+                    genes.into_iter().map(move |gene| (aspect, gene))
+                })
+            });
+
+        for (aspect, gene) in known_other_flat {
+            let exp_for_aspect = gene_index.get(&aspect).and_then(|by_status| {
+                by_status.get(&AnnotationStatus::KnownExperimental)
+            });
+
+            let exp_contains = exp_for_aspect
+                .map(|exp| exp.contains(gene))
+                .unwrap_or(false);
+
+            if !exp_contains {
+                gene_index.entry(aspect)
+                    .or_insert_with(HashMap::new)
+                    .entry(AnnotationStatus::KnownOther)
+                    .or_insert_with(HashSet::new)
+                    .insert(gene);
+            }
+        }
+
+        Index { gene_index, anno_index }
     }
 }
 
@@ -72,7 +111,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_gene_index() {
+    fn test_create_indexes() {
         let genes: Vec<Gene> = vec![
             Gene {
                 gene_id: "AT1G74030".to_string(),
@@ -87,7 +126,7 @@ mod tests {
         let annotations: Vec<Annotation> = vec![
             Annotation {
                 db: "TAIR".to_string(),
-                database_id: "locus:2031476".to_string(),
+                database_id: "locus:1111111".to_string(),
                 db_object_symbol: "ENO1".to_string(),
                 invert: "".to_string(),
                 go_term: "GO:0000015".to_string(),
@@ -106,7 +145,7 @@ mod tests {
             },
             Annotation {
                 db: "TAIR".to_string(),
-                database_id: "locus:2031476".to_string(),
+                database_id: "locus:2222222".to_string(),
                 db_object_symbol: "ENO1".to_string(),
                 invert: "".to_string(),
                 go_term: "GO:0000015".to_string(),
@@ -125,7 +164,7 @@ mod tests {
             },
             Annotation {
                 db: "TAIR".to_string(),
-                database_id: "locus:2031476".to_string(),
+                database_id: "locus:3333333".to_string(),
                 db_object_symbol: "ENO1".to_string(),
                 invert: "".to_string(),
                 go_term: "GO:0000015".to_string(),
@@ -144,7 +183,36 @@ mod tests {
             },
         ];
 
-        let gene_index = GeneIndex::from_records(&genes, &annotations);
-        dbg!(gene_index);
+        let index = Index::new(&genes, &annotations);
+
+        let mut gene_index: GeneIndex = HashMap::new();
+        gene_index.entry(Aspect::CellularComponent)
+            .or_insert_with(HashMap::new)
+            .entry(AnnotationStatus::KnownExperimental)
+            .or_insert_with(HashSet::new)
+            .insert(&genes[0]);
+        gene_index.entry(Aspect::CellularComponent)
+            .or_insert_with(HashMap::new)
+            .entry(AnnotationStatus::Unknown)
+            .or_insert_with(HashSet::new)
+            .insert(&genes[1]);
+
+        let mut anno_index: AnnoIndex = HashMap::new();
+
+        let mut gene0_annotations = HashSet::new();
+        gene0_annotations.insert(&annotations[0]);
+        gene0_annotations.insert(&annotations[1]);
+        anno_index.entry(genes[0].gene_id.to_string())
+            .or_insert((&genes[0], gene0_annotations));
+
+        let mut gene1_annotations = HashSet::new();
+        gene1_annotations.insert(&annotations[2]);
+        anno_index.entry(genes[1].gene_id.to_string())
+            .or_insert((&genes[1], gene1_annotations));
+
+        let expected_index = Index { gene_index, anno_index };
+
+        dbg!(&index);
+        assert_eq!(expected_index, index);
     }
 }

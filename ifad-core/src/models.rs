@@ -1,4 +1,4 @@
-use crate::{Aspect, AnnotationStatus};
+use crate::{Aspect, AnnotationStatus, AnnoIndex};
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub struct Annotation {
@@ -21,7 +21,15 @@ pub struct Annotation {
     pub gene_product_form_id: String,
 }
 
-#[derive(Debug)]
+impl Annotation {
+    pub fn gene_in(&self, index: &AnnoIndex) -> Option<&str> {
+        self.gene_names.iter()
+            .find(|name| index.contains_key(*name))
+            .map(String::as_str)
+    }
+}
+
+#[derive(Debug, Hash, Eq, PartialEq)]
 pub struct Gene {
     pub gene_id: String,
     pub gene_product_type: String,
