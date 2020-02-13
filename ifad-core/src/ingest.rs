@@ -101,11 +101,14 @@ impl AnnotationRecord {
             .flexible(true)
             .from_reader(reader);
 
-        let results: Vec<_> = csv_reader.deserialize::<Self>()
-            .filter_map(Result::ok)
-            .collect();
+        let mut records = Vec::new();
+        let mut row = csv::StringRecord::new();
+        while csv_reader.read_record(&mut row).unwrap() {
+            let record: AnnotationRecord = row.deserialize(None).unwrap();
+            records.push(record);
+        }
 
-        Ok(results)
+        Ok(records)
     }
 }
 
@@ -123,11 +126,14 @@ impl GeneRecord {
             .flexible(true)
             .from_reader(reader);
 
-        let results: Vec<_> = csv_reader.deserialize::<Self>()
-            .filter_map(Result::ok)
-            .collect();
+        let mut records = Vec::new();
+        let mut row = csv::StringRecord::new();
+        while csv_reader.read_record(&mut row).unwrap() {
+            let record: GeneRecord = row.deserialize(None).unwrap();
+            records.push(record);
+        }
 
-        Ok(results)
+        Ok(records)
     }
 }
 
