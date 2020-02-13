@@ -9,6 +9,8 @@ mod models;
 
 use crate::models::{Annotation, Gene};
 
+pub use ingest::{AnnotationRecord, GeneRecord, MetadataReader};
+
 #[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Aspect {
     #[serde(rename = "F")]
