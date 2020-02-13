@@ -3,4 +3,5 @@
 members = [
     "ifad-core",
     "ifad-cli",
+    "ifad-api",
 ]
