@@ -1,9 +1,4 @@
-use std::collections::HashSet;
 use crate::{Aspect, AnnotationStatus, AnnoIndex, AnnotationRecord, GeneRecord};
-
-pub struct AnnotationConfig {
-    pub experimental_evidence: HashSet<String>,
-}
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub struct Annotation {
@@ -27,14 +22,14 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    pub fn from_record(record: AnnotationRecord, config: &AnnotationConfig) -> Self {
+    pub fn from_record(record: AnnotationRecord, experimental_evidence: &[&str]) -> Self {
         let mut gene_names = vec![record.unique_gene_name];
         gene_names.extend(record.alternative_gene_name.split('|').map(ToOwned::to_owned));
 
         let annotation_status =
             if &record.evidence_code == "ND" {
                 AnnotationStatus::Unknown
-            } else if config.experimental_evidence.contains(&record.evidence_code) {
+            } else if experimental_evidence.contains(&&*record.evidence_code) {
                 AnnotationStatus::KnownExperimental
             } else {
                 AnnotationStatus::KnownOther
@@ -108,11 +103,7 @@ mod tests {
             annotation_extension: "".to_string(),
             gene_product_form_id: "TAIR:locus:2031476".to_string(),
         };
-        let mut experimental_evidence = HashSet::new();
-        experimental_evidence.insert("IEA".to_string());
-        let config = AnnotationConfig { experimental_evidence };
-
-        let annotation = Annotation::from_record(record, &config);
+        let annotation = Annotation::from_record(record, &["IEA"]);
         let expected_annotation = Annotation {
             db: "TAIR".to_string(),
             database_id: "locus:2031476".to_string(),

@@ -7,9 +7,8 @@ use serde::{Deserialize, Serialize};
 mod ingest;
 mod models;
 
-use crate::models::{Annotation, Gene};
-
 pub use ingest::{AnnotationRecord, GeneRecord, MetadataReader};
+pub use models::{Annotation, Gene};
 
 #[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Aspect {
@@ -34,8 +33,8 @@ type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene, HashSet<&'b Annotation>)>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Index<'a, 'b> {
-    gene_index: GeneIndex<'a>,
-    anno_index: AnnoIndex<'a, 'b>,
+    pub gene_index: GeneIndex<'a>,
+    pub anno_index: AnnoIndex<'a, 'b>,
 }
 
 impl Index<'_, '_> {
@@ -55,10 +54,7 @@ impl Index<'_, '_> {
             let gene_id = annotation.gene_in(&anno_index);
             let gene_id = match gene_id {
                 Some(gene_id) => gene_id,
-                None => {
-                    println!("No gene for annotation {:?}", annotation);
-                    continue;
-                },
+                None => continue, // TODO collect warnings
             };
             let (gene, gene_annotations) = anno_index
                 .get_mut(&*gene_id).expect("should get gene");

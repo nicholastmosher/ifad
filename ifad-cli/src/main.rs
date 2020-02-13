@@ -1,6 +1,6 @@
 use clap::{App, Arg, ArgMatches};
 use std::io::BufReader;
-use ifad::MetadataReader;
+use ifad::{MetadataReader, Annotation, Gene, Index};
 
 fn app<'a, 'b>() -> clap::App<'a, 'b> {
     App::new("ifad")
@@ -45,6 +45,18 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     println!();
     println!("Got {} annotations", anno_records.len());
     println!("Annotation metadata:\n{}", anno_metadata);
+
+    let genes: Vec<Gene> = gene_records.into_iter()
+        .map(|record| Gene::from(record))
+        .collect();
+
+    let experimental_evidence = &["EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "HTP", "HDA", "HMP", "HGI", "HEP"];
+    let annotations: Vec<Annotation> = anno_records.into_iter()
+        .map(|record| Annotation::from_record(record, experimental_evidence))
+        .collect();
+
+    let index: Index = Index::new(&genes, &annotations);
+    println!("Index has {} genes and {} annotations", index.gene_index.len(), index.anno_index.len());
 
     Ok(())
 }
