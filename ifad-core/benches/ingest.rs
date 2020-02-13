@@ -9,7 +9,7 @@ fn run_metadata_annotations(data: &str) {
     let mut reader = MetadataReader::new(Cursor::new(data));
     let mut data_output = String::new();
     reader.read_to_string(&mut data_output).unwrap();
-    let metadata = reader.take_metadata().unwrap();
+    let metadata = reader.metadata().unwrap();
 }
 
 fn metadata_annotations_benchmark(c: &mut Criterion) {

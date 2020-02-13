@@ -5,6 +5,7 @@ use crate::Aspect;
 pub struct MetadataReader<B> {
     reader: B,
     metadata: String,
+    header: String,
     metadata_finished: bool,
     buffer: Cursor<String>,
 }
@@ -14,6 +15,7 @@ impl<B: BufRead> MetadataReader<B> {
         MetadataReader {
             reader,
             metadata: String::new(),
+            header: String::new(),
             metadata_finished: false,
             buffer: Cursor::new(String::new()),
         }
@@ -24,10 +26,9 @@ impl<B: BufRead> MetadataReader<B> {
         Some(&self.metadata)
     }
 
-    pub fn take_metadata(&mut self) -> Option<String> {
+    pub fn header(&self) -> Option<&str> {
         if !self.metadata_finished { return None; }
-        let metadata = std::mem::replace(&mut self.metadata, String::new());
-        Some(metadata)
+        Some(&self.header)
     }
 }
 
@@ -60,11 +61,8 @@ impl<B: BufRead> Read for MetadataReader<B> {
                 // Mark that the metadata section has ended
                 self.metadata_finished = true;
 
-                // Client reads data that was buffered
-                let len = self.buffer.read(buf)?;
-                if len != 0 { return Ok(len); }
-
-                // If the buffer is spent, clear it out
+                // This line must be the header
+                self.buffer.read_to_string(&mut self.header)?;
                 self.buffer.get_mut().clear();
                 return self.reader.read(buf);
             }
@@ -207,6 +205,7 @@ TAIR	locus:2032970	AT1G25260		GO:0000027	TAIR:AnalysisReference:501756966	IEA	In
         let mut output = String::new();
         let _ = metadata_reader.read_to_string(&mut output);
         let metadata_output = metadata_reader.metadata().unwrap();
+        let header_output = metadata_reader.header().unwrap();
 
         let expected_metadata = r"
 
@@ -225,8 +224,10 @@ TAIR	locus:2032970	AT1G25260		GO:0000027	TAIR:AnalysisReference:501756966	IEA	In
 ";
         assert_eq!(metadata_output, expected_metadata);
 
-        let expected_body = r"DB	DB Object ID	DB Object Symbol	Qualifier	GO ID	DB:Reference (JDB:Reference)	Evidence Code	With (or) From	Aspect	DB Object Name	DB Object Type	Taxon	Date	Assigned By	Annotation Extension	Gene Product Form ID
-TAIR	locus:2031476	ENO1		GO:0000015	TAIR:AnalysisReference:501756966	IEA	InterPro:IPR000941	C	AT1G74030	AT1G74030|ENO1|enolase 1|F2P9.10|F2P9_10	protein	taxon:3702	20190907	InterPro		TAIR:locus:2031476
+        let expected_header = "DB	DB Object ID	DB Object Symbol	Qualifier	GO ID	DB:Reference (JDB:Reference)	Evidence Code	With (or) From	Aspect	DB Object Name	DB Object Type	Taxon	Date	Assigned By	Annotation Extension	Gene Product Form ID\n";
+        assert_eq!(header_output, expected_header);
+
+        let expected_body = r"TAIR	locus:2031476	ENO1		GO:0000015	TAIR:AnalysisReference:501756966	IEA	InterPro:IPR000941	C	AT1G74030	AT1G74030|ENO1|enolase 1|F2P9.10|F2P9_10	protein	taxon:3702	20190907	InterPro		TAIR:locus:2031476
 TAIR	locus:2043067	ENOC		GO:0000015	TAIR:AnalysisReference:501756966	IEA	InterPro:IPR000941	C	AT2G29560	AT2G29560|ENOC|ENO3|cytosolic enolase|enolase 3|F16P2.6|F16P2_6	protein	taxon:3702	20190408	InterPro		TAIR:locus:2043067
 TAIR	locus:2044851	LOS2		GO:0000015	TAIR:AnalysisReference:501756966	IEA	InterPro:IPR000941	C	AT2G36530	AT2G36530|LOS2|ENO2|LOW EXPRESSION OF OSMOTICALLY RESPONSIVE GENES 2|enolase 2|F1O11.16|F1O11_16	protein	taxon:3702	20190408	InterPro		TAIR:locus:2044851
 TAIR	locus:2032970	AT1G25260		GO:0000027	TAIR:AnalysisReference:501756966	IEA	InterPro:IPR033867	P	AT1G25260	AT1G25260|F4F7.35|F4F7_35	protein	taxon:3702	20190404	InterPro		TAIR:locus:2032970";
