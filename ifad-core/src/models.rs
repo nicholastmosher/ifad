@@ -1,4 +1,5 @@
-use crate::{Aspect, AnnotationStatus, AnnoIndex, AnnotationRecord, GeneRecord};
+use crate::{Aspect, AnnotationStatus, AnnotationRecord, GeneRecord};
+use crate::index::AnnoIndex;
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub struct Annotation {
