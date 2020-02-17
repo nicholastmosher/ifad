@@ -1,6 +1,10 @@
 #![deny(warnings)]
 #![allow(dead_code)]
 
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+
 use serde::{Deserialize, Serialize};
 
 mod ingest;
