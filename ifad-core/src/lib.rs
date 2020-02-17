@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 mod ingest;
 mod models;
 mod index;
+mod queries;
 
 pub use ingest::{AnnotationRecord, GeneRecord, MetadataReader};
 pub use models::{Annotation, Gene};
