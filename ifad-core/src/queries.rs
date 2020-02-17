@@ -46,10 +46,10 @@ enum Query {
 }
 
 impl Query {
-    pub fn execute<'a>(&self, _index: &'a Index) -> QueryResult<'a> {
+    pub fn execute<'a>(&self, index: &'a Index) -> QueryResult<'a> {
         match self {
-            Query::All => query_all(_index),
-            Query::Union(_segments) => unimplemented!(),
+            Query::All => query_all(index),
+            Query::Union(segments) => query_union(index, &segments),
             Query::Intersection(_segments) => unimplemented!(),
         }
     }
@@ -154,11 +154,10 @@ mod tests {
 
     #[test]
     fn test_query_segment_bp_exp() {
+        use {Aspect::*, AnnotationStatus::*};
+
         let index = Index::new(&*TEST_GENES, &*TEST_ANNOTATIONS);
-        let segment = Segment {
-            aspect: Aspect::BiologicalProcess,
-            annotation_status: AnnotationStatus::KnownExperimental,
-        };
+        let segment = Segment { aspect: BiologicalProcess, annotation_status: KnownExperimental };
         let result = segment.query(&index);
 
         let expected_genes_vec = vec![
@@ -190,11 +189,10 @@ mod tests {
 
     #[test]
     fn test_query_segment_mf_other() {
+        use {Aspect::*, AnnotationStatus::*};
+
         let index = Index::new(&*TEST_GENES, &*TEST_ANNOTATIONS);
-        let segment = Segment {
-            aspect: Aspect::MolecularFunction,
-            annotation_status: AnnotationStatus::KnownOther,
-        };
+        let segment = Segment { aspect: MolecularFunction, annotation_status: KnownOther };
         let result = segment.query(&index);
 
         let expected_genes_vec = vec![
@@ -221,8 +219,8 @@ mod tests {
         let segment_a = Segment { aspect: BiologicalProcess, annotation_status: KnownExperimental };
         let segment_b = Segment { aspect: MolecularFunction, annotation_status: KnownOther };
         let segment_c = Segment { aspect: CellularComponent, annotation_status: KnownOther };
-
-        let results = query_union(&index, &[segment_a, segment_b, segment_c]);
+        let query = Query::Union(vec![segment_a, segment_b, segment_c]);
+        let results = query.execute(&index);
 
         let expected_genes_vec = vec![
             Gene { gene_id: "AT5G48870".to_string(), gene_product_type: "protein_coding".to_string() },
