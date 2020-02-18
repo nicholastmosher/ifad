@@ -73,7 +73,52 @@ impl Index<'_, '_> {
             }
         }
 
-        Index { gene_index, anno_index }
+        Index { gene_index, anno_index }.index_unannotated()
+    }
+
+    fn index_unannotated(mut self) -> Self {
+
+        let aspects: &[Aspect] = &[
+            Aspect::CellularComponent,
+            Aspect::MolecularFunction,
+            Aspect::BiologicalProcess,
+        ];
+
+        let genes_by_aspect: HashMap<Aspect, HashSet<&Gene>> = self.gene_index.iter()
+            .map(|(&aspect, by_status)| {
+                let genes: HashSet<_> = by_status.iter()
+                    .flat_map(|(_, genes)| genes.into_iter().map(|&gene| gene)).collect();
+
+                (aspect, genes)
+            })
+            .collect();
+
+        let genes_iter = self.anno_index.iter()
+            .map(|(_, (gene, _))| gene);
+
+        let mut unannotated_by_aspect: HashMap<Aspect, HashSet<&Gene>> = HashMap::new();
+        for &gene in genes_iter {
+            for aspect in aspects.iter() {
+                let in_aspect = genes_by_aspect.get(aspect)
+                    .map(|genes| genes.contains(gene))
+                    .unwrap_or(false);
+                if !in_aspect {
+                    unannotated_by_aspect.entry(*aspect)
+                        .or_insert_with(HashSet::new)
+                        .insert(gene);
+                }
+            }
+        }
+
+        for (aspect, genes) in unannotated_by_aspect.into_iter() {
+            self.gene_index.entry(aspect)
+                .or_insert_with(HashMap::new)
+                .entry(AnnotationStatus::Unannotated)
+                .or_insert_with(HashSet::new)
+                .extend(genes);
+        }
+
+        self
     }
 }
 
@@ -157,16 +202,26 @@ mod tests {
         let index = Index::new(&genes, &annotations);
 
         let mut gene_index: GeneIndex = HashMap::new();
-        gene_index.entry(Aspect::CellularComponent)
+        let cc = gene_index.entry(Aspect::CellularComponent)
+            .or_insert_with(HashMap::new);
+        cc.entry(AnnotationStatus::KnownExperimental)
+            .or_insert_with(HashSet::new).insert(&genes[0]);
+        cc.entry(AnnotationStatus::Unknown)
+            .or_insert_with(HashSet::new).insert(&genes[1]);
+
+        // Neither gene is annotated to BiologicalProcess
+        gene_index.entry(Aspect::BiologicalProcess)
             .or_insert_with(HashMap::new)
-            .entry(AnnotationStatus::KnownExperimental)
+            .entry(AnnotationStatus::Unannotated)
             .or_insert_with(HashSet::new)
-            .insert(&genes[0]);
-        gene_index.entry(Aspect::CellularComponent)
+            .extend(&[&genes[0], &genes[1]]);
+
+        // Neither gene is annotated to MolecularFunction
+        gene_index.entry(Aspect::MolecularFunction)
             .or_insert_with(HashMap::new)
-            .entry(AnnotationStatus::Unknown)
+            .entry(AnnotationStatus::Unannotated)
             .or_insert_with(HashSet::new)
-            .insert(&genes[1]);
+            .extend(&[&genes[0], &genes[1]]);
 
         let mut anno_index: AnnoIndex = HashMap::new();
 
