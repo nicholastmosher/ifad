@@ -9,13 +9,17 @@ pub struct QueryResult<'a> {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct Segment {
+pub struct Segment {
     aspect: Aspect,
     annotation_status: AnnotationStatus,
 }
 
 impl Segment {
-    fn query<'a>(&self, index: &'a Index) -> QueryResult<'a> {
+    pub fn new(aspect: Aspect, annotation_status: AnnotationStatus) -> Self {
+        Segment { aspect, annotation_status }
+    }
+
+    pub fn query<'a>(&self, index: &'a Index) -> QueryResult<'a> {
 
         // Find all genes belonging to this segment
         let genes: HashSet<&Gene> = index.gene_index
@@ -39,7 +43,7 @@ impl Segment {
     }
 }
 
-enum Query {
+pub enum Query {
     All,
     Union(Vec<Segment>),
     Intersection(Vec<Segment>),

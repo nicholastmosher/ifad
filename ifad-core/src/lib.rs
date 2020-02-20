@@ -15,6 +15,7 @@ mod queries;
 pub use ingest::{AnnotationRecord, GeneRecord, MetadataReader};
 pub use models::{Annotation, Gene};
 pub use index::Index;
+pub use queries::{Segment, Query, QueryResult};
 
 #[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Aspect {
