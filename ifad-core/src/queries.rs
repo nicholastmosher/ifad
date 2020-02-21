@@ -4,17 +4,49 @@ use std::ops::Deref;
 
 #[derive(Debug)]
 pub struct QueryResult<'a> {
-    genes: HashSet<&'a Gene<'a>>,
-    annotations: HashSet<&'a Annotation<'a>>,
+    ordered: bool,
+    genes: &'a [Gene<'a>],
+    annotations: &'a [Annotation<'a>],
+    queried_genes: HashSet<&'a Gene<'a>>,
+    queried_annotations: HashSet<&'a Annotation<'a>>,
+}
+
+enum EitherIter<A: Iterator, B: Iterator> {
+    First(A),
+    Second(B),
+}
+
+impl<A, B, T> Iterator for EitherIter<A, B>
+    where A: Iterator<Item=T>,
+          B: Iterator<Item=T>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            EitherIter::First(a) => a.next(),
+            EitherIter::Second(b) => b.next(),
+        }
+    }
 }
 
 impl QueryResult<'_> {
-    pub fn genes_iter(&self) -> impl Iterator<Item=&'_ Gene> {
-        self.genes.iter().map(|&gene| gene)
+    pub fn genes_iter(&self) -> impl Iterator<Item=&Gene> {
+        if self.ordered {
+            EitherIter::First(self.genes.into_iter()
+                .filter(move |&gene| self.queried_genes.contains(gene)))
+        } else {
+            EitherIter::Second(self.queried_genes.iter().map(|&gene| gene))
+        }
     }
 
-    pub fn annotations_iter(&self) -> impl Iterator<Item=&'_ Annotation> {
-        self.annotations.iter().map(|&anno| anno)
+    pub fn annotations_iter(&self) -> impl Iterator<Item=&Annotation> {
+        if self.ordered {
+            EitherIter::First(self.annotations.into_iter()
+                .filter(move |&anno| self.queried_annotations.contains(anno)))
+        } else {
+            EitherIter::Second(self.queried_annotations.iter().map(|&anno| anno))
+        }
     }
 }
 
@@ -32,7 +64,7 @@ impl Segment {
     pub fn query<'a>(&self, index: &'a Index) -> QueryResult<'a> {
 
         // Find all genes belonging to this segment
-        let genes: HashSet<&Gene> = index.gene_index
+        let queried_genes: HashSet<&Gene> = index.gene_index
             .get(&self.aspect)
             .and_then(|statuses| statuses.get(&self.annotation_status))
             .map(IntoIterator::into_iter).into_iter()
@@ -41,7 +73,7 @@ impl Segment {
 
         // Find all annotations belonging to those genes which
         // share the aspect and annotation of this segment
-        let annotations: HashSet<&Annotation> = genes.iter()
+        let queried_annotations: HashSet<&Annotation> = queried_genes.iter()
             .map(|gene| index.anno_index.get(gene.gene_id))
             .filter_map(|maybe_gene| maybe_gene)
             .flat_map(|(_, annos)| annos.into_iter().map(Deref::deref))
@@ -49,7 +81,13 @@ impl Segment {
                 && anno.annotation_status == self.annotation_status)
             .collect();
 
-        QueryResult { genes, annotations }
+        QueryResult {
+            ordered: false,
+            genes: &index.genes,
+            annotations: &index.annotations,
+            queried_genes,
+            queried_annotations,
+        }
     }
 }
 
@@ -71,15 +109,21 @@ impl Query {
 
 fn query_all<'a>(index: &'a Index) -> QueryResult<'a> {
 
-    let (genes, annos): (HashSet<&Gene>, Vec<&HashSet<&Annotation>>) = index.anno_index.iter()
+    let (queried_genes, annos): (HashSet<&Gene>, Vec<&HashSet<&Annotation>>) = index.anno_index.iter()
         .map(|(_, (gene, annos))| (gene, annos)).unzip();
 
-    let annotations: HashSet<&Annotation> = annos.into_iter()
+    let queried_annotations: HashSet<&Annotation> = annos.into_iter()
         .flat_map(|set| set.into_iter())
         .map(Deref::deref)
         .collect();
 
-    QueryResult { genes, annotations }
+    QueryResult {
+        ordered: true,
+        genes: &index.genes,
+        annotations: &index.annotations,
+        queried_genes,
+        queried_annotations,
+    }
 }
 
 fn query_union<'a>(index: &'a Index, segments: &[Segment]) -> QueryResult<'a> {
@@ -87,12 +131,18 @@ fn query_union<'a>(index: &'a Index, segments: &[Segment]) -> QueryResult<'a> {
     let mut union_annos = HashSet::new();
 
     for segment in segments {
-        let QueryResult { genes, annotations } = segment.query(index);
-        union_genes.extend(genes);
-        union_annos.extend(annotations);
+        let QueryResult { queried_genes, queried_annotations, .. } = segment.query(index);
+        union_genes.extend(queried_genes);
+        union_annos.extend(queried_annotations);
     }
 
-    QueryResult { genes: union_genes, annotations: union_annos }
+    QueryResult {
+        ordered: false,
+        genes: &index.genes,
+        annotations: &index.annotations,
+        queried_genes: union_genes,
+        queried_annotations: union_annos,
+    }
 }
 
 #[cfg(test)]
@@ -183,10 +233,10 @@ mod tests {
         let result = Query::All.execute(&index);
 
         // All of the genes from the input should appear in the query result
-        assert!(TEST_GENES.iter().all(|gene| result.genes.contains(gene)));
+        assert!(TEST_GENES.iter().all(|gene| result.queried_genes.contains(gene)));
 
         // All of the annotations from the input should appear in the query result
-        assert!(TEST_ANNOTATIONS.iter().all(|anno| result.annotations.contains(anno)));
+        assert!(TEST_ANNOTATIONS.iter().all(|anno| result.queried_annotations.contains(anno)));
     }
 
     #[test]
@@ -203,7 +253,7 @@ mod tests {
             &TEST_GENES[2],
         ];
         let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
-        assert_eq!(&expected_genes, &result.genes);
+        assert_eq!(&expected_genes, &result.queried_genes);
 
         let expected_annotations_vec = vec![
             // AT5G48870
@@ -221,7 +271,7 @@ mod tests {
             &TEST_ANNOTATIONS[39],
         ];
         let expected_annotations: HashSet<_> = expected_annotations_vec.into_iter().collect();
-        assert_eq!(&expected_annotations, &result.annotations);
+        assert_eq!(&expected_annotations, &result.queried_annotations);
     }
 
     #[test]
@@ -236,14 +286,14 @@ mod tests {
             &TEST_GENES[0],
         ];
         let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
-        assert_eq!(&expected_genes, &result.genes);
+        assert_eq!(&expected_genes, &result.queried_genes);
         let expected_annotations_vec = vec![
             // AT5G48870
             &TEST_ANNOTATIONS[8],
             &TEST_ANNOTATIONS[10],
         ];
         let expected_annotations: HashSet<_> = expected_annotations_vec.into_iter().collect();
-        assert_eq!(&expected_annotations, &result.annotations);
+        assert_eq!(&expected_annotations, &result.queried_annotations);
     }
 
     #[test]
@@ -265,7 +315,7 @@ mod tests {
             &TEST_GENES[3],
         ];
         let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
-        assert_eq!(&expected_genes, &results.genes);
+        assert_eq!(&expected_genes, &results.queried_genes);
 
         let expected_annotations_vec = vec![
             // AT5G48870
@@ -293,7 +343,7 @@ mod tests {
             &TEST_ANNOTATIONS[43],
         ];
         let expected_annotations: HashSet<_> = expected_annotations_vec.into_iter().collect();
-        assert_eq!(&expected_annotations, &results.annotations);
+        assert_eq!(&expected_annotations, &results.queried_annotations);
     }
 
     #[test]
@@ -312,7 +362,7 @@ mod tests {
             &TEST_GENES[4],
         ];
         let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
-        assert_eq!(&expected_genes, &results.genes);
+        assert_eq!(&expected_genes, &results.queried_genes);
 
         let expected_annotations_vec = vec![
             // AT2G34580
@@ -325,6 +375,17 @@ mod tests {
             &TEST_ANNOTATIONS[46],
         ];
         let expected_annotations: HashSet<_> = expected_annotations_vec.into_iter().collect();
-        assert_eq!(&expected_annotations, &results.annotations);
+        assert_eq!(&expected_annotations, &results.queried_annotations);
+    }
+
+    #[test]
+    fn test_query_all_is_ordered() {
+        let index = Index::new(&*TEST_GENES, &*TEST_ANNOTATIONS);
+        let query = Query::All;
+        let results = query.execute(&index);
+
+        // Test that annotations are in the same order
+        results.annotations_iter().zip(TEST_ANNOTATIONS.iter())
+            .for_each(|(actual, expected)| assert_eq!(actual, expected));
     }
 }

@@ -6,6 +6,8 @@ pub type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene<'a>, HashSet<&'b Annotati
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Index<'a, 'b> {
+    pub genes: &'a [Gene<'a>],
+    pub annotations: &'b [Annotation<'b>],
     pub gene_index: GeneIndex<'a>,
     pub anno_index: AnnoIndex<'a, 'b>,
 }
@@ -73,7 +75,7 @@ impl Index<'_, '_> {
             }
         }
 
-        Index { gene_index, anno_index }.index_unannotated()
+        Index { genes, annotations, gene_index, anno_index }.index_unannotated()
     }
 
     fn index_unannotated(mut self) -> Self {
@@ -244,7 +246,12 @@ mod tests {
         anno_index.entry(genes[1].gene_id.to_string())
             .or_insert((&genes[1], gene1_annotations));
 
-        let expected_index = Index { gene_index, anno_index };
+        let expected_index = Index {
+            genes: &genes,
+            annotations: &annotations,
+            gene_index,
+            anno_index,
+        };
         assert_eq!(expected_index, index);
     }
 }
