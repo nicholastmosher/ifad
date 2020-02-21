@@ -1,6 +1,6 @@
 use clap::{App, Arg, ArgMatches};
-use std::io::{Write, BufReader};
-use ifad::{MetadataReader, Annotation, Gene, Index, Aspect, AnnotationStatus, Segment};
+use std::io::BufReader;
+use ifad::{MetadataReader, Annotation, Gene, Index, Aspect, AnnotationStatus, Segment, GafExporter};
 
 fn app<'a, 'b>() -> clap::App<'a, 'b> {
     App::new("ifad")
@@ -72,14 +72,15 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let mut anno_reader = MetadataReader::new(BufReader::new(&mut annos_file));
     let anno_records = ifad::AnnotationRecord::parse_from(&mut anno_reader)
         .map_err(|e| format!("failed to parse annotation records: {:?}", e))?;
-    let _anno_metadata = anno_reader.metadata().expect("should capture annotation metadata");
+    let anno_metadata = anno_reader.metadata().expect("should capture annotation metadata");
+    let anno_headers = anno_reader.header().expect("should capture annotation header");
 
     let genes: Vec<Gene> = gene_records.into_iter()
         .map(|record| Gene::from(record))
         .collect();
 
     let experimental_evidence = &["EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "HTP", "HDA", "HMP", "HGI", "HEP"];
-    let annotations: Vec<Annotation> = anno_records.into_iter()
+    let annotations: Vec<Annotation> = anno_records.iter()
         .map(|record| Annotation::from_record(record, experimental_evidence))
         .collect();
 
@@ -88,8 +89,13 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let result = segment.query(&index);
 
     let mut out_file = std::fs::File::create(out_path).expect("should open output file");
-    write!(&mut out_file, "{:#?}", result)
-        .map_err(|e| format!("failed to write to file: {:?}", e))?;
+
+    let mut exporter = GafExporter::new(
+        anno_metadata.to_string(),
+        anno_headers.to_string(),
+        result.annotations_iter().map(|anno| anno.record));
+    exporter.write_all(&mut out_file)
+        .map_err(|e| format!("failed to export data as GAF: {:?}", e))?;
 
     Ok(())
 }

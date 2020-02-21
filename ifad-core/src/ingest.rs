@@ -70,7 +70,7 @@ impl<B: BufRead> Read for MetadataReader<B> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnnotationRecord {
     pub db: String,
     pub database_id: String,

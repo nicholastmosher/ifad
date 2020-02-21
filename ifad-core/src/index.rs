@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{Aspect, AnnotationStatus, Gene, Annotation};
 
 pub type GeneIndex<'a> = HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'a Gene>>>;
-pub type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene, HashSet<&'b Annotation>)>;
+pub type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene, HashSet<&'b Annotation<'b>>)>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Index<'a, 'b> {
@@ -125,6 +125,7 @@ impl Index<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AnnotationRecord;
 
     #[test]
     fn test_create_indexes() {
@@ -139,19 +140,20 @@ mod tests {
             },
         ];
 
-        let annotations: Vec<Annotation> = vec![
-            Annotation {
+        let experimental_evidence = &["EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "HTP", "HDA", "HMP", "HGI", "HEP"];
+        let annotation_records: Vec<AnnotationRecord> = vec![
+            AnnotationRecord {
                 db: "TAIR".to_string(),
                 database_id: "locus:1111111".to_string(),
                 db_object_symbol: "ENO1".to_string(),
-                invert: false,
+                invert: "".to_string(),
                 go_term: "GO:0000015".to_string(),
                 reference: "TAIR:AnalysisReference:501756966".to_string(),
-                evidence_code: "IEA".to_string(),
+                evidence_code: "EXP".to_string(), // KNOWN_EXP
                 additional_evidence: "InterPro:IPR000941".to_string(),
                 aspect: Aspect::CellularComponent,
-                annotation_status: AnnotationStatus::KnownExperimental,
-                gene_names: vec!["AT1G74030".to_string()],
+                unique_gene_name: "AT1G74030".to_string(),
+                alternative_gene_name: "".to_string(),
                 gene_product_type: "protein".to_string(),
                 taxon: "taxon:3702".to_string(),
                 date: "20190907".to_string(),
@@ -159,18 +161,18 @@ mod tests {
                 annotation_extension: "".to_string(),
                 gene_product_form_id: "TAIR:locus:2031476".to_string(),
             },
-            Annotation {
+            AnnotationRecord {
                 db: "TAIR".to_string(),
                 database_id: "locus:2222222".to_string(),
                 db_object_symbol: "ENO1".to_string(),
-                invert: false,
+                invert: "".to_string(),
                 go_term: "GO:0000015".to_string(),
                 reference: "TAIR:AnalysisReference:501756966".to_string(),
-                evidence_code: "IEA".to_string(),
+                evidence_code: "OTHER".to_string(), // KNOWN_OTHER
                 additional_evidence: "InterPro:IPR000941".to_string(),
                 aspect: Aspect::CellularComponent,
-                annotation_status: AnnotationStatus::KnownOther,
-                gene_names: vec!["AT1G74030".to_string()],
+                unique_gene_name: "AT1G74030".to_string(),
+                alternative_gene_name: "".to_string(),
                 gene_product_type: "protein".to_string(),
                 taxon: "taxon:3702".to_string(),
                 date: "20190907".to_string(),
@@ -178,18 +180,18 @@ mod tests {
                 annotation_extension: "".to_string(),
                 gene_product_form_id: "TAIR:locus:2031476".to_string(),
             },
-            Annotation {
+            AnnotationRecord {
                 db: "TAIR".to_string(),
                 database_id: "locus:3333333".to_string(),
                 db_object_symbol: "ENO1".to_string(),
-                invert: false,
+                invert: "".to_string(),
                 go_term: "GO:0000015".to_string(),
                 reference: "TAIR:AnalysisReference:501756966".to_string(),
-                evidence_code: "IEA".to_string(),
+                evidence_code: "ND".to_string(), // UNKNOWN
                 additional_evidence: "InterPro:IPR000941".to_string(),
                 aspect: Aspect::CellularComponent,
-                annotation_status: AnnotationStatus::Unknown,
-                gene_names: vec!["AT1G74040".to_string()],
+                unique_gene_name: "AT1G74040".to_string(),
+                alternative_gene_name: "".to_string(),
                 gene_product_type: "protein".to_string(),
                 taxon: "taxon:3702".to_string(),
                 date: "20190907".to_string(),
@@ -198,6 +200,9 @@ mod tests {
                 gene_product_form_id: "TAIR:locus:2031476".to_string(),
             },
         ];
+        let annotations: Vec<_> = annotation_records.iter()
+            .map(|record| Annotation::from_record(record, &experimental_evidence[..]))
+            .collect();
 
         let index = Index::new(&genes, &annotations);
 
