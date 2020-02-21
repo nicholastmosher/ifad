@@ -5,6 +5,7 @@
 #[macro_use]
 extern crate lazy_static;
 
+use std::convert::TryFrom;
 use serde::{Deserialize, Serialize};
 
 mod ingest;
@@ -29,10 +30,39 @@ pub enum Aspect {
     CellularComponent,
 }
 
+impl TryFrom<&str> for Aspect {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let aspect = match value {
+            "F" => Aspect::MolecularFunction,
+            "P" => Aspect::MolecularFunction,
+            "C" => Aspect::MolecularFunction,
+            _ => return Err(()),
+        };
+        Ok(aspect)
+    }
+}
+
 #[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AnnotationStatus {
     KnownExperimental,
     KnownOther,
     Unknown,
     Unannotated,
+}
+
+impl TryFrom<&str> for AnnotationStatus {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let status = match value {
+            "EXP" => AnnotationStatus::KnownExperimental,
+            "OTHER" => AnnotationStatus::KnownOther,
+            "UNKNOWN" => AnnotationStatus::Unknown,
+            "UNANNOTATED" => AnnotationStatus::Unannotated,
+            _ => return Err(()),
+        };
+        Ok(status)
+    }
 }

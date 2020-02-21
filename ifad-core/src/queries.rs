@@ -1,6 +1,7 @@
 use crate::{Aspect, AnnotationStatus, Index, Gene, Annotation};
 use std::collections::HashSet;
 use std::ops::Deref;
+use std::convert::TryFrom;
 
 #[derive(Debug)]
 pub struct QueryResult<'a> {
@@ -56,6 +57,16 @@ pub struct Segment {
     annotation_status: AnnotationStatus,
 }
 
+impl TryFrom<(&str, &str)> for Segment {
+    type Error = ();
+
+    fn try_from((aspect, status): (&str, &str)) -> Result<Self, Self::Error> {
+        let aspect = Aspect::try_from(aspect)?;
+        let status = AnnotationStatus::try_from(status)?;
+        Ok(Segment { aspect, annotation_status: status })
+    }
+}
+
 impl Segment {
     pub fn new(aspect: Aspect, annotation_status: AnnotationStatus) -> Self {
         Segment { aspect, annotation_status }
@@ -91,6 +102,7 @@ impl Segment {
     }
 }
 
+#[derive(Debug)]
 pub enum Query {
     All,
     Union(Vec<Segment>),
