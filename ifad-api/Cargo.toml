@@ -8,4 +8,7 @@ edition = "2018"
 
 [dependencies]
 ifad = { path = "../ifad-core" }
+actix = "0.9.0"
 actix-web = "2.0.0"
+futures = "0.3.4"
+arc-swap = "0.4.4"
