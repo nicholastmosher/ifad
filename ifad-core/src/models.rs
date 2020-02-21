@@ -67,16 +67,18 @@ impl Annotation<'_> {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]
-pub struct Gene {
-    pub gene_id: String,
-    pub gene_product_type: String,
+pub struct Gene<'a> {
+    pub record: &'a GeneRecord,
+    pub gene_id: &'a str,
+    pub gene_product_type: &'a str,
 }
 
-impl From<GeneRecord> for Gene {
-    fn from(record: GeneRecord) -> Self {
+impl Gene<'_> {
+    pub fn from_record(record: &GeneRecord) -> Gene {
         Gene {
-            gene_id: record.gene_id,
-            gene_product_type: record.gene_product_type,
+            record,
+            gene_id: &record.gene_id,
+            gene_product_type: &record.gene_product_type,
         }
     }
 }

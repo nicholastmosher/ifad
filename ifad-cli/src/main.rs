@@ -75,8 +75,8 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let anno_metadata = anno_reader.metadata().expect("should capture annotation metadata");
     let anno_headers = anno_reader.header().expect("should capture annotation header");
 
-    let genes: Vec<Gene> = gene_records.into_iter()
-        .map(|record| Gene::from(record))
+    let genes: Vec<Gene> = gene_records.iter()
+        .map(|record| Gene::from_record(record))
         .collect();
 
     let experimental_evidence = &["EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "HTP", "HDA", "HMP", "HGI", "HEP"];

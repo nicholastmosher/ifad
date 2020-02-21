@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use crate::{Aspect, AnnotationStatus, Gene, Annotation};
 
-pub type GeneIndex<'a> = HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'a Gene>>>;
-pub type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene, HashSet<&'b Annotation<'b>>)>;
+pub type GeneIndex<'a> = HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'a Gene<'a>>>>;
+pub type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene<'a>, HashSet<&'b Annotation<'b>>)>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Index<'a, 'b> {
@@ -125,20 +125,23 @@ impl Index<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AnnotationRecord;
+    use crate::{AnnotationRecord, GeneRecord};
 
     #[test]
     fn test_create_indexes() {
-        let genes: Vec<Gene> = vec![
-            Gene {
+        let gene_records: Vec<GeneRecord> = vec![
+            GeneRecord {
                 gene_id: "AT1G74030".to_string(),
                 gene_product_type: "protein".to_string(),
             },
-            Gene {
+            GeneRecord {
                 gene_id: "AT1G74040".to_string(),
                 gene_product_type: "protein".to_string(),
             },
         ];
+        let genes: Vec<Gene> = gene_records.iter()
+            .map(|record| Gene::from_record(record))
+            .collect();
 
         let experimental_evidence = &["EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "HTP", "HDA", "HMP", "HGI", "HEP"];
         let annotation_records: Vec<AnnotationRecord> = vec![

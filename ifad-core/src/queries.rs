@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 #[derive(Debug)]
 pub struct QueryResult<'a> {
-    genes: HashSet<&'a Gene>,
+    genes: HashSet<&'a Gene<'a>>,
     annotations: HashSet<&'a Annotation<'a>>,
 }
 
@@ -42,7 +42,7 @@ impl Segment {
         // Find all annotations belonging to those genes which
         // share the aspect and annotation of this segment
         let annotations: HashSet<&Annotation> = genes.iter()
-            .map(|gene| index.anno_index.get(&gene.gene_id))
+            .map(|gene| index.anno_index.get(gene.gene_id))
             .filter_map(|maybe_gene| maybe_gene)
             .flat_map(|(_, annos)| annos.into_iter().map(Deref::deref))
             .filter(|anno| anno.aspect == self.aspect
@@ -98,16 +98,19 @@ fn query_union<'a>(index: &'a Index, segments: &[Segment]) -> QueryResult<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AnnotationRecord;
+    use crate::{AnnotationRecord, GeneRecord};
 
     lazy_static! {
-        static ref TEST_GENES: Vec<Gene> = vec![
-            Gene { gene_id: "AT5G48870".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT1G07060".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT4G34200".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT2G34580".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT4G30872".to_string(), gene_product_type: "other_rna".to_string() },
+        static ref TEST_GENE_RECORDS: Vec<GeneRecord> = vec![
+            /* 0 */ GeneRecord { gene_id: "AT5G48870".to_string(), gene_product_type: "protein_coding".to_string() },
+            /* 1 */ GeneRecord { gene_id: "AT1G07060".to_string(), gene_product_type: "protein_coding".to_string() },
+            /* 2 */ GeneRecord { gene_id: "AT4G34200".to_string(), gene_product_type: "protein_coding".to_string() },
+            /* 3 */ GeneRecord { gene_id: "AT2G34580".to_string(), gene_product_type: "protein_coding".to_string() },
+            /* 4 */ GeneRecord { gene_id: "AT4G30872".to_string(), gene_product_type: "other_rna".to_string() },
         ];
+        static ref TEST_GENES: Vec<Gene<'static>> = TEST_GENE_RECORDS.iter()
+            .map(|record| Gene::from_record(record))
+            .collect();
 
         static ref TEST_ANNOTATION_RECORDS: Vec<AnnotationRecord> = vec![
             // AT5G48870
@@ -195,11 +198,11 @@ mod tests {
         let result = segment.query(&index);
 
         let expected_genes_vec = vec![
-            Gene { gene_id: "AT5G48870".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT1G07060".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT4G34200".to_string(), gene_product_type: "protein_coding".to_string() },
+            &TEST_GENES[0],
+            &TEST_GENES[1],
+            &TEST_GENES[2],
         ];
-        let expected_genes: HashSet<_> = expected_genes_vec.iter().collect();
+        let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
         assert_eq!(&expected_genes, &result.genes);
 
         let expected_annotations_vec = vec![
@@ -230,9 +233,9 @@ mod tests {
         let result = segment.query(&index);
 
         let expected_genes_vec = vec![
-            Gene { gene_id: "AT5G48870".to_string(), gene_product_type: "protein_coding".to_string() },
+            &TEST_GENES[0],
         ];
-        let expected_genes: HashSet<_> = expected_genes_vec.iter().collect();
+        let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
         assert_eq!(&expected_genes, &result.genes);
         let expected_annotations_vec = vec![
             // AT5G48870
@@ -256,12 +259,12 @@ mod tests {
         let results = query.execute(&index);
 
         let expected_genes_vec = vec![
-            Gene { gene_id: "AT5G48870".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT1G07060".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT4G34200".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT2G34580".to_string(), gene_product_type: "protein_coding".to_string() },
+            &TEST_GENES[0],
+            &TEST_GENES[1],
+            &TEST_GENES[2],
+            &TEST_GENES[3],
         ];
-        let expected_genes: HashSet<_> = expected_genes_vec.iter().collect();
+        let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
         assert_eq!(&expected_genes, &results.genes);
 
         let expected_annotations_vec = vec![
@@ -305,10 +308,10 @@ mod tests {
         let results = query.execute(&index);
 
         let expected_genes_vec = vec![
-            Gene { gene_id: "AT2G34580".to_string(), gene_product_type: "protein_coding".to_string() },
-            Gene { gene_id: "AT4G30872".to_string(), gene_product_type: "other_rna".to_string() },
+            &TEST_GENES[3],
+            &TEST_GENES[4],
         ];
-        let expected_genes: HashSet<_> = expected_genes_vec.iter().collect();
+        let expected_genes: HashSet<_> = expected_genes_vec.into_iter().collect();
         assert_eq!(&expected_genes, &results.genes);
 
         let expected_annotations_vec = vec![

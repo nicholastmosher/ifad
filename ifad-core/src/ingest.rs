@@ -110,7 +110,7 @@ impl AnnotationRecord {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GeneRecord {
     pub gene_id: String,
     pub gene_product_type: String,
