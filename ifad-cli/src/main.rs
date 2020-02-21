@@ -41,10 +41,15 @@ fn app<'a, 'b>() -> clap::App<'a, 'b> {
             .required(true)
             .require_equals(true)
             .takes_value(true))
+        .arg(Arg::with_name("query")
+            .long("--query")
+            .possible_values(&["union", "intersection"])
+            .default_value("union")
+            .require_equals(true))
         .arg(Arg::with_name("segment")
             .multiple(true)
             .long("--segment")
-            .required(true)
+            .required_unless("all")
             .require_equals(true)
             .takes_value(true)
             .validator(segment_validator))
@@ -55,7 +60,7 @@ fn main() {
 
     match run(&matches) {
         Ok(()) => (),
-        Err(e) => eprintln!("{:?}", e),
+        Err(e) => eprintln!("{}", e),
     }
 }
 
@@ -64,6 +69,7 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let annos_path = args.value_of("annotations").expect("should have annotations arg");
     let genes_out = args.value_of("genes_out").expect("should get genes output path");
     let annos_out = args.value_of("annotations_out").expect("should get annotations output path");
+    let query = args.value_of("query").expect("should get query value");
     let segments = args.values_of("segment").expect("aspect should have some values");
 
     let segments: Vec<Segment> = segments.into_iter().map(|segment| {
@@ -98,7 +104,13 @@ fn run(args: &ArgMatches) -> Result<(), String> {
         .collect();
 
     let index: Index = Index::new(&genes, &annotations);
-    let query = Query::Union(segments);
+    let query = match query {
+        "union" => Query::Union(segments),
+        // "intersection" => Query::Intersection(segments),
+        "intersection" => return Err(format!("Intersection queries are not yet implemented!")),
+        _ => unreachable!(),
+    };
+
     eprintln!("Executing query: {:?}", query);
     let result = query.execute(&index);
 
