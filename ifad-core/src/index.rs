@@ -13,6 +13,16 @@ pub struct Index<'a, 'b> {
 }
 
 impl Index<'_, '_> {
+
+    /// Create a new Index from a slice of Genes and a slice of Annotations.
+    ///
+    /// An Index is basically a data structure that organizes references to
+    /// Genes and Annotations based on their properties. For example, references
+    /// to Genes are organized by the Aspect and Annotation Status that the
+    /// gene belongs to (according to the given Annotations). Additionally,
+    /// sets of Annotation references are stored according to the Gene which
+    /// they annotate. By organizing the data in this way, we help to optimize
+    /// the speed of lookups.
     pub fn new<'a, 'b>(
         genes: &'a [Gene],
         annotations: &'b [Annotation]
@@ -20,10 +30,19 @@ impl Index<'_, '_> {
         let mut gene_index: GeneIndex = HashMap::new();
         let mut anno_index: AnnoIndex = HashMap::new();
 
+        // The annotation index should have a key for each Gene that exists.
+        // There may not exist any annotations for some genes, but we still
+        // make empty entries for those genes anyways.
         for gene in genes {
             anno_index.insert(gene.gene_id.to_string(), (&gene, HashSet::new()));
         }
 
+        // First pass: Put all KnownExperimental and Unknown annotations
+        // directly into the index, but put all KnownOther annotations into
+        // a temporary index.
+        //
+        // We will come back for a second pass to determine whether each of the
+        // KnownOther annotations should be placed in the permanent index.
         let mut known_other_index: GeneIndex = HashMap::new();
         for annotation in annotations {
             let gene_id = annotation.gene_in(&anno_index);
@@ -35,6 +54,8 @@ impl Index<'_, '_> {
                 .get_mut(&*gene_id).expect("should get gene");
             gene_annotations.insert(annotation);
 
+            // Insert into temporary index for KnownOther, or
+            // permanent index for KnownExperimental and Unknown.
             let index_to_insert =
                 if annotation.annotation_status == AnnotationStatus::KnownOther {
                     &mut known_other_index
@@ -50,6 +71,8 @@ impl Index<'_, '_> {
                 .insert(&*gene);
         }
 
+        // Create an iterator over all Genes in the temporary KnownOther
+        // index where each Gene is paired with the Aspect it was annotated with
         let known_other_flat = known_other_index.into_iter()
             .flat_map(|(aspect, by_status)| {
                 by_status.into_iter().flat_map(move |(_, genes)| {
@@ -57,6 +80,13 @@ impl Index<'_, '_> {
                 })
             });
 
+        // Second Pass: Adding KnownOther genes to the permanent index.
+        //
+        // For each Gene (G) with Aspect (A) in the KnownOther index:
+        //   * Look up all KnownExperimental genes in aspect A in the permanent index
+        //   * Determine whether gene G appears in that KnownExperimental set
+        //   * If gene G does not appear in the KnownExperimental set, add G to
+        //     the KnownOther set for aspect A in the permanent index.
         for (aspect, gene) in known_other_flat {
             let exp_for_aspect = gene_index.get(&aspect).and_then(|by_status| {
                 by_status.get(&AnnotationStatus::KnownExperimental)
