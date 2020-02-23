@@ -78,6 +78,12 @@ impl Index<'_, '_> {
         Index { genes, annotations, gene_index, anno_index }.index_unannotated()
     }
 
+    /// Calculates the Unannotated section for each Aspect in the index.
+    ///
+    /// After an Index has been constructed with all of the Annotated categories -
+    /// i.e. KnownExperimental, KnownOther, and Unknown - then we can do another
+    /// pass in order to calculate the genes which are _not_ annotated to each
+    /// aspect.
     fn index_unannotated(mut self) -> Self {
 
         let aspects: &[Aspect] = &[
@@ -86,6 +92,7 @@ impl Index<'_, '_> {
             Aspect::BiologicalProcess,
         ];
 
+        // For each Aspect, collect a set of all Genes which are annotated to it
         let genes_by_aspect: HashMap<Aspect, HashSet<&Gene>> = self.gene_index.iter()
             .map(|(&aspect, by_status)| {
                 let genes: HashSet<_> = by_status.iter()
@@ -95,29 +102,26 @@ impl Index<'_, '_> {
             })
             .collect();
 
+        // Create an iterator over _all_ genes
         let genes_iter = self.anno_index.iter()
             .map(|(_, (gene, _))| gene);
 
-        let mut unannotated_by_aspect: HashMap<Aspect, HashSet<&Gene>> = HashMap::new();
+        // For each Gene (G), and for each Aspect (A):
+        // If gene G does not appear in the annotations for aspect A, then
+        // add gene G to the "Unannotated" set for aspect A.
         for &gene in genes_iter {
             for aspect in aspects.iter() {
                 let in_aspect = genes_by_aspect.get(aspect)
                     .map(|genes| genes.contains(gene))
                     .unwrap_or(false);
                 if !in_aspect {
-                    unannotated_by_aspect.entry(*aspect)
+                    self.gene_index.entry(*aspect)
+                        .or_insert_with(HashMap::new)
+                        .entry(AnnotationStatus::Unannotated)
                         .or_insert_with(HashSet::new)
                         .insert(gene);
                 }
             }
-        }
-
-        for (aspect, genes) in unannotated_by_aspect.into_iter() {
-            self.gene_index.entry(aspect)
-                .or_insert_with(HashMap::new)
-                .entry(AnnotationStatus::Unannotated)
-                .or_insert_with(HashSet::new)
-                .extend(genes);
         }
 
         self
