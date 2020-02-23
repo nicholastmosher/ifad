@@ -6,14 +6,14 @@ use std::convert::TryFrom;
 fn app<'a, 'b>() -> clap::App<'a, 'b> {
 
     let segment_validator = |segment: String| {
-        let splits: Vec<&str> = segment.split(",").collect();
-        if splits.len() != 2 { return Err(format!("segments must be written as ASPECT,STATUS")); }
-        if let &[aspect, status] = &splits[..] {
+        let splits: Vec<&str> = segment.split(',').collect();
+        if splits.len() != 2 { return Err("segments must be written as ASPECT,STATUS".to_string()); }
+        if let [aspect, status] = splits[..] {
             if !&["F", "C", "P"].contains(&aspect) {
-                return Err(format!("aspect must be one of F, C, or P"));
+                return Err("aspect must be one of F, C, or P".to_string());
             }
             if !&["EXP", "OTHER", "UNKNOWN", "UNANNOTATED"].contains(&status) {
-                return Err(format!("status must be one of EXP, OTHER, UNKNOWN, or UNANNOTATED"));
+                return Err("status must be one of EXP, OTHER, UNKNOWN, or UNANNOTATED".to_string());
             }
             return Ok(());
         }
@@ -97,8 +97,8 @@ fn run(args: &ArgMatches) -> Result<(), String> {
         },
     };
 
-    let segments: Vec<Segment> = config.segments.into_iter().map(|segment| {
-        let split: Vec<&str> = segment.split(",").collect();
+    let segments: Vec<Segment> = config.segments.map(|segment| {
+        let split: Vec<&str> = segment.split(',').collect();
         let segment = (split[0], split[1]);
         Segment::try_from(segment).expect("should convert segment arg to Segment")
     }).collect();
@@ -132,7 +132,7 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let query = match config.query {
         "union" => Query::Union(segments),
         // "intersection" => Query::Intersection(segments),
-        "intersection" => return Err(format!("Intersection queries are not yet implemented!")),
+        "intersection" => return Err("Intersection queries are not yet implemented!".to_string()),
         _ => unreachable!(),
     };
 

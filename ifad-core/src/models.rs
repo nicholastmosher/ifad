@@ -61,8 +61,7 @@ impl Annotation<'_> {
 
     pub fn gene_in(&self, index: &AnnoIndex) -> Option<&str> {
         self.gene_names.iter()
-            .find(|name| index.contains_key(&name.to_string()))
-            .map(|&name| name)
+            .find(|name| index.contains_key(&((**name).to_string()))).copied()
     }
 }
 

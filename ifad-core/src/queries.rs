@@ -34,19 +34,19 @@ impl<A, B, T> Iterator for EitherIter<A, B>
 impl QueryResult<'_> {
     pub fn genes_iter(&self) -> impl Iterator<Item=&Gene> {
         if self.ordered {
-            EitherIter::First(self.genes.into_iter()
+            EitherIter::First(self.genes.iter()
                 .filter(move |&gene| self.queried_genes.contains(gene)))
         } else {
-            EitherIter::Second(self.queried_genes.iter().map(|&gene| gene))
+            EitherIter::Second(self.queried_genes.iter().copied())
         }
     }
 
     pub fn annotations_iter(&self) -> impl Iterator<Item=&Annotation> {
         if self.ordered {
-            EitherIter::First(self.annotations.into_iter()
+            EitherIter::First(self.annotations.iter()
                 .filter(move |&anno| self.queried_annotations.contains(anno)))
         } else {
-            EitherIter::Second(self.queried_annotations.iter().map(|&anno| anno))
+            EitherIter::Second(self.queried_annotations.iter().copied())
         }
     }
 }
@@ -87,7 +87,7 @@ impl Segment {
         let queried_annotations: HashSet<&Annotation> = queried_genes.iter()
             .map(|gene| index.anno_index.get(gene.gene_id))
             .filter_map(|maybe_gene| maybe_gene)
-            .flat_map(|(_, annos)| annos.into_iter().map(Deref::deref))
+            .flat_map(|(_, annos)| annos.iter().map(Deref::deref))
             .filter(|anno| anno.aspect == self.aspect
                 && anno.annotation_status == self.annotation_status)
             .collect();
@@ -125,7 +125,7 @@ fn query_all<'a>(index: &'a Index) -> QueryResult<'a> {
         .map(|(_, (gene, annos))| (gene, annos)).unzip();
 
     let queried_annotations: HashSet<&Annotation> = annos.into_iter()
-        .flat_map(|set| set.into_iter())
+        .flat_map(|set| set.iter())
         .map(Deref::deref)
         .collect();
 

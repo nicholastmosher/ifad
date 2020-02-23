@@ -96,7 +96,7 @@ impl Index<'_, '_> {
         let genes_by_aspect: HashMap<Aspect, HashSet<&Gene>> = self.gene_index.iter()
             .map(|(&aspect, by_status)| {
                 let genes: HashSet<_> = by_status.iter()
-                    .flat_map(|(_, genes)| genes.into_iter().map(|&gene| gene)).collect();
+                    .flat_map(|(_, genes)| genes.iter().copied()).collect();
 
                 (aspect, genes)
             })
