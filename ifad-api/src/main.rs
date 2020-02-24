@@ -1,10 +1,14 @@
 use futures::FutureExt;
 use actix_web::{HttpServer, App, web, HttpResponse, Responder};
-use ifad::{MetadataReader, Gene, Annotation, Index, GeneRecord, AnnotationRecord, Query};
+use ifad::{MetadataReader, Gene, Annotation, Index, GeneRecord, AnnotationRecord, Query, StreamingGafExporter};
 use std::io::{BufReader, Read, BufRead};
 use std::sync::Arc;
 use arc_swap::ArcSwap;
 use std::ops::Deref;
+use actix_web::dev::HttpResponseBuilder;
+use actix_web::http::StatusCode;
+use futures::io::AllowStdIo;
+use actix_web::error::PayloadError;
 
 struct Config {
     genes_file: String,
@@ -67,8 +71,8 @@ fn swap_data<GR, AR>(
     let gene_metadata = gene_reader.metadata().expect("should capture gene metadata").to_string();
     let gene_headers = gene_reader.header().expect("should get gene headers").to_string();
     let gene_data = Arc::new(GeneData { gene_metadata, gene_headers, gene_records });
-    let genes: Vec<Gene> = gene_data.gene_records.iter()
-        .map(|record| Gene::from_record(record))
+    let genes: Vec<Gene> = gene_data.gene_records.into_iter()
+        .map(|record| Gene::from_record(&record))
         .collect();
     let genes_arc = Arc::new(genes);
 
@@ -89,17 +93,28 @@ fn swap_data<GR, AR>(
     Ok(())
 }
 
-async fn index(data: web::Data<ArcSwap<Option<Index>>>) -> impl Responder {
-    let data: Option<&Index> = *data.load().as_ref().as_ref();
+async fn index(data: web::Data<ArcSwap<Option<Index<'static, 'static>>>>) -> impl Responder {
+    use futures::StreamExt;
+
+    let data: Option<&Index> = data.load().as_ref().as_ref();
     let index = match data {
         None => return HttpResponse::Ok().body("Data has not been loaded yet"),
         Some(index) => index,
     };
 
+    let query_result = Query::All.execute(&index);
+    let stream = StreamingGafExporter::new(
+        "anno metadata".to_string(),
+        "anno_header".to_string(),
+        query_result.annotations_iter().map(|item| item.record))
+        .map(|result| result.map_err(|_| PayloadError::EncodingCorrupted));
+
+    HttpResponseBuilder::new(StatusCode::OK)
+        .streaming(stream)
 }
 
-async fn server(data: ArcSwap<Option<Index>>) -> std::io::Result<()> {
-    HttpServer::new(|| {
+async fn server(data: ArcSwap<Option<Index<'static, 'static>>>) -> std::io::Result<()> {
+    HttpServer::new(move || {
         App::new()
             .data(data)
             .route("/", web::get().to(index))
