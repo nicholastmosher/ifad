@@ -36,8 +36,8 @@ impl TryFrom<&str> for Aspect {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let aspect = match value {
             "F" => Aspect::MolecularFunction,
-            "P" => Aspect::MolecularFunction,
-            "C" => Aspect::MolecularFunction,
+            "P" => Aspect::BiologicalProcess,
+            "C" => Aspect::CellularComponent,
             _ => return Err(()),
         };
         Ok(aspect)
