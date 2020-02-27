@@ -131,8 +131,7 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let index: Index = Index::new(&genes, &annotations);
     let query = match config.query {
         "union" => Query::Union(segments),
-        // "intersection" => Query::Intersection(segments),
-        "intersection" => return Err("Intersection queries are not yet implemented!".to_string()),
+        "intersection" => Query::Intersection(segments),
         _ => unreachable!(),
     };
 

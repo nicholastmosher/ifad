@@ -45,7 +45,8 @@ impl Index<'_, '_> {
         // KnownOther annotations should be placed in the permanent index.
         let mut known_other_index: GeneIndex = HashMap::new();
         for annotation in annotations {
-            let gene_id = annotation.gene_in(&anno_index);
+            let gene_id = annotation.gene_in(&anno_index)
+                .map(|gene| gene.gene_id.to_string());
             let gene_id = match gene_id {
                 Some(gene_id) => gene_id,
                 None => continue, // TODO collect warnings
