@@ -1,8 +1,10 @@
-use std::io::{Write, Cursor};
+use std::io::Write;
 use serde::Serialize;
 
 #[cfg(feature="async")]
 use std::pin::Pin;
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::ops::DerefMut;
 
 pub struct GafExporter<I: Iterator> {
@@ -38,18 +40,39 @@ impl<T, I: Iterator<Item=T>> GafExporter<I>
     }
 }
 
+#[derive(Debug, Clone)]
+struct RefWriter<W: Write> {
+    writer: Rc<RefCell<W>>,
+}
+
+impl<W: Write> RefWriter<W> {
+    pub fn new(writer: W) -> Self {
+        RefWriter { writer: Rc::new(RefCell::new(writer)) }
+    }
+}
+
+impl<W: Write> Write for RefWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.writer.as_ref().borrow_mut().write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.as_ref().borrow_mut().flush()
+    }
+}
+
 #[cfg(feature="async")]
-pub struct StreamingGafExporter<I: Iterator> {
+pub struct StreamingGafExporter<I: Iterator + Unpin> {
     metadata: String,
     csv_header: String,
     header_done: bool,
-    buffer: Pin<Box<Cursor<Vec<u8>>>>,
-    csv_writer: csv::Writer<&'static mut Cursor<Vec<u8>>>,
+    buffer: RefWriter<Vec<u8>>,
+    csv_writer: csv::Writer<RefWriter<Vec<u8>>>,
     record_iter: I,
 }
 
 #[cfg(feature="async")]
-impl<T, I: Iterator<Item=T>> StreamingGafExporter<I>
+impl<T, I: Iterator<Item=T> + Unpin> StreamingGafExporter<I>
     where T: Serialize
 {
     pub fn new(
@@ -57,19 +80,18 @@ impl<T, I: Iterator<Item=T>> StreamingGafExporter<I>
         csv_header: String,
         record_iter: I,
     ) -> Pin<Box<StreamingGafExporter<I>>> {
-        let mut buffer = Box::pin(Cursor::new(Vec::new()));
-        let buffer_ref: &'static mut _ = unsafe { &mut *(buffer.deref_mut() as *mut _) };
+        let buffer = RefWriter::new(vec![]);
         let csv_writer = csv::WriterBuilder::new()
             .has_headers(false)
             .delimiter(b'\t')
-            .from_writer(buffer_ref);
+            .from_writer(buffer.clone());
 
         Box::pin(StreamingGafExporter {
             metadata,
             csv_header,
             header_done: false,
-            record_iter,
             buffer,
+            record_iter,
             csv_writer,
         })
     }
@@ -99,39 +121,39 @@ impl<T, I: Iterator<Item=T>> StreamingGafExporter<I>
 }
 
 #[cfg(feature="async")]
-impl<T, I: Iterator<Item=T>> futures::Stream for StreamingGafExporter<I>
+impl<T, I: Iterator<Item=T> + Unpin> futures::Stream for StreamingGafExporter<I>
     where T: Serialize
 {
     type Item = Result<bytes::Bytes, String>;
 
     fn poll_next(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         _cx: &mut futures::task::Context<'_>
     ) -> futures::task::Poll<Option<Self::Item>> {
         use futures::task::Poll;
         use bytes::Bytes;
 
-        let uself = unsafe { Pin::get_unchecked_mut(self) };
-
-        if !uself.header_done {
-            let mut header = uself.metadata.clone();
+        if !self.header_done {
+            let mut header = self.metadata.clone();
             if !header.ends_with('\n') { header.push('\n'); }
-            header.push_str(&*uself.csv_header);
+            header.push_str(&*self.csv_header);
             if !header.ends_with('\n') { header.push('\n'); }
-            uself.header_done = true;
+            self.header_done = true;
             return Poll::Ready(Some(Ok(Bytes::from(header))));
         }
 
-        uself.buffer.deref_mut().get_mut().clear();
-        let record = match uself.record_iter.next() {
+        self.deref_mut().buffer.writer.as_ref().borrow_mut().clear();
+        let record = match self.record_iter.next() {
             None => return Poll::Ready(None),
             Some(record) => record,
         };
 
         let result: Result<Bytes, String> = (|| {
-            uself.csv_writer.serialize(record)
+            self.csv_writer.serialize(record)
                 .map_err(|e| format!("failed to serialize record: {:?}", e))?;
-            let contents = uself.buffer.deref_mut().get_mut().clone();
+            self.csv_writer.flush()
+                .map_err(|e| format!("failed to flush csv writer: {:?}", e))?;
+            let contents = self.buffer.writer.as_ref().borrow().clone();
             Ok(Bytes::from(contents))
         })();
 
