@@ -1,59 +1,55 @@
+use crate::{Gene, Annotation, Aspect, AnnotationStatus};
 use std::collections::{HashMap, HashSet};
-use crate::{Aspect, AnnotationStatus, Gene, Annotation};
 
-pub type GeneIndex<'a> = HashMap<Aspect, HashMap<AnnotationStatus, HashSet<&'a Gene<'a>>>>;
-pub type AnnoIndex<'a, 'b> = HashMap<String, (&'a Gene<'a>, HashSet<&'b Annotation<'b>>)>;
+#[cfg(not(test))]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
+pub struct GeneKey(usize);
+#[cfg(test)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
+pub struct GeneKey(pub usize);
+
+#[cfg(not(test))]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
+pub struct AnnoKey(usize);
+#[cfg(test)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
+pub struct AnnoKey(pub usize);
+
+pub type GeneIndex = HashMap<Aspect, HashMap<AnnotationStatus, HashSet<GeneKey>>>;
+pub type AnnoIndex = HashMap<String, (GeneKey, HashSet<AnnoKey>)>;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct Index<'a, 'b> {
-    pub genes: &'a [Gene<'a>],
-    pub annotations: &'b [Annotation<'b>],
-    pub gene_index: GeneIndex<'a>,
-    pub anno_index: AnnoIndex<'a, 'b>,
+pub struct Index {
+    pub genes: Vec<Gene>,
+    pub annos: Vec<Annotation>,
+    pub gene_index: GeneIndex,
+    pub anno_index: AnnoIndex,
 }
 
-impl Index<'_, '_> {
+impl Index {
 
-    /// Create a new Index from a slice of Genes and a slice of Annotations.
-    ///
-    /// An Index is basically a data structure that organizes references to
-    /// Genes and Annotations based on their properties. For example, references
-    /// to Genes are organized by the Aspect and Annotation Status that the
-    /// gene belongs to (according to the given Annotations). Additionally,
-    /// sets of Annotation references are stored according to the Gene which
-    /// they annotate. By organizing the data in this way, we help to optimize
-    /// the speed of lookups.
-    pub fn new<'a, 'b>(
-        genes: &'a [Gene],
-        annotations: &'b [Annotation]
-    ) -> Index<'a, 'b> {
+    pub fn new(genes: Vec<Gene>, annos: Vec<Annotation>) -> Index {
         let mut gene_index: GeneIndex = HashMap::new();
         let mut anno_index: AnnoIndex = HashMap::new();
 
         // The annotation index should have a key for each Gene that exists.
         // There may not exist any annotations for some genes, but we still
         // make empty entries for those genes anyways.
-        for gene in genes {
-            anno_index.insert(gene.gene_id.to_string(), (&gene, HashSet::new()));
+        for (i, gene) in genes.iter().enumerate() {
+            anno_index.insert(gene.gene_id().to_string(), (GeneKey(i), HashSet::new()));
         }
 
-        // First pass: Put all KnownExperimental and Unknown annotations
-        // directly into the index, but put all KnownOther annotations into
-        // a temporary index.
-        //
-        // We will come back for a second pass to determine whether each of the
-        // KnownOther annotations should be placed in the permanent index.
         let mut known_other_index: GeneIndex = HashMap::new();
-        for annotation in annotations {
+        for (i, annotation) in annos.iter().enumerate() {
             let gene_id = annotation.gene_in(&anno_index)
-                .map(|gene| gene.gene_id.to_string());
+                .map(|gene| genes[gene.0].gene_id().to_string());
             let gene_id = match gene_id {
                 Some(gene_id) => gene_id,
-                None => continue, // TODO collect warnings
+                None => continue,
             };
             let (gene, gene_annotations) = anno_index
                 .get_mut(&*gene_id).expect("should get gene");
-            gene_annotations.insert(annotation);
+            gene_annotations.insert(AnnoKey(i));
 
             // Insert into temporary index for KnownOther, or
             // permanent index for KnownExperimental and Unknown.
@@ -69,7 +65,7 @@ impl Index<'_, '_> {
                 .or_insert_with(HashMap::new)
                 .entry(annotation.annotation_status)
                 .or_insert_with(HashSet::new)
-                .insert(&*gene);
+                .insert(*gene);
         }
 
         // Create an iterator over all Genes in the temporary KnownOther
@@ -94,7 +90,7 @@ impl Index<'_, '_> {
             });
 
             let exp_contains = exp_for_aspect
-                .map(|exp| exp.contains(gene))
+                .map(|exp| exp.contains(&gene))
                 .unwrap_or(false);
 
             if !exp_contains {
@@ -106,7 +102,7 @@ impl Index<'_, '_> {
             }
         }
 
-        Index { genes, annotations, gene_index, anno_index }.index_unannotated()
+        Index { genes, annos, gene_index, anno_index }.index_unannotated()
     }
 
     /// Calculates the Unannotated section for each Aspect in the index.
@@ -124,7 +120,7 @@ impl Index<'_, '_> {
         ];
 
         // For each Aspect, collect a set of all Genes which are annotated to it
-        let genes_by_aspect: HashMap<Aspect, HashSet<&Gene>> = self.gene_index.iter()
+        let genes_by_aspect: HashMap<Aspect, HashSet<GeneKey>> = self.gene_index.iter()
             .map(|(&aspect, by_status)| {
                 let genes: HashSet<_> = by_status.iter()
                     .flat_map(|(_, genes)| genes.iter().copied()).collect();
@@ -137,10 +133,7 @@ impl Index<'_, '_> {
         let genes_iter = self.anno_index.iter()
             .map(|(_, (gene, _))| gene);
 
-        // For each Gene (G), and for each Aspect (A):
-        // If gene G does not appear in the annotations for aspect A, then
-        // add gene G to the "Unannotated" set for aspect A.
-        for &gene in genes_iter {
+        for gene in genes_iter {
             for aspect in aspects.iter() {
                 let in_aspect = genes_by_aspect.get(aspect)
                     .map(|genes| genes.contains(gene))
@@ -150,12 +143,28 @@ impl Index<'_, '_> {
                         .or_insert_with(HashMap::new)
                         .entry(AnnotationStatus::Unannotated)
                         .or_insert_with(HashSet::new)
-                        .insert(gene);
+                        .insert(*gene);
                 }
             }
         }
 
         self
+    }
+
+    pub fn get_gene(&self, key: &GeneKey) -> Option<&Gene> {
+        self.genes.get(key.0)
+    }
+
+    pub fn iter_genes(&self) -> impl Iterator<Item=(GeneKey, &Gene)> {
+        self.genes.iter().enumerate().map(|(i, gene)| (GeneKey(i), gene))
+    }
+
+    pub fn get_annotation(&self, key: &AnnoKey) -> Option<&Annotation> {
+        self.annos.get(key.0)
+    }
+
+    pub fn iter_annotations(&self) -> impl Iterator<Item=(AnnoKey, &Annotation)> {
+        self.annos.iter().enumerate().map(|(i, anno)| (AnnoKey(i), anno))
     }
 }
 
@@ -176,7 +185,7 @@ mod tests {
                 gene_product_type: "protein".to_string(),
             },
         ];
-        let genes: Vec<Gene> = gene_records.iter()
+        let genes: Vec<Gene> = gene_records.into_iter()
             .map(|record| Gene::from_record(record))
             .collect();
 
@@ -240,50 +249,50 @@ mod tests {
                 gene_product_form_id: "TAIR:locus:2031476".to_string(),
             },
         ];
-        let annotations: Vec<_> = annotation_records.iter()
+        let annos: Vec<_> = annotation_records.into_iter()
             .map(|record| Annotation::from_record(record, &experimental_evidence[..]))
             .collect();
 
-        let index = Index::new(&genes, &annotations);
+        let index = Index::new(genes.clone(), annos.clone());
 
         let mut gene_index: GeneIndex = HashMap::new();
         let cc = gene_index.entry(Aspect::CellularComponent)
             .or_insert_with(HashMap::new);
         cc.entry(AnnotationStatus::KnownExperimental)
-            .or_insert_with(HashSet::new).insert(&genes[0]);
+            .or_insert_with(HashSet::new).insert(GeneKey(0));
         cc.entry(AnnotationStatus::Unknown)
-            .or_insert_with(HashSet::new).insert(&genes[1]);
+            .or_insert_with(HashSet::new).insert(GeneKey(1));
 
         // Neither gene is annotated to BiologicalProcess
         gene_index.entry(Aspect::BiologicalProcess)
             .or_insert_with(HashMap::new)
             .entry(AnnotationStatus::Unannotated)
             .or_insert_with(HashSet::new)
-            .extend(&[&genes[0], &genes[1]]);
+            .extend(&[GeneKey(0), GeneKey(1)]);
 
         // Neither gene is annotated to MolecularFunction
         gene_index.entry(Aspect::MolecularFunction)
             .or_insert_with(HashMap::new)
             .entry(AnnotationStatus::Unannotated)
             .or_insert_with(HashSet::new)
-            .extend(&[&genes[0], &genes[1]]);
+            .extend(&[GeneKey(0), GeneKey(1)]);
 
         let mut anno_index: AnnoIndex = HashMap::new();
 
         let mut gene0_annotations = HashSet::new();
-        gene0_annotations.insert(&annotations[0]);
-        gene0_annotations.insert(&annotations[1]);
-        anno_index.entry(genes[0].gene_id.to_string())
-            .or_insert((&genes[0], gene0_annotations));
+        gene0_annotations.insert(AnnoKey(0));
+        gene0_annotations.insert(AnnoKey(1));
+        anno_index.entry(genes[0].gene_id().to_string())
+            .or_insert((GeneKey(0), gene0_annotations));
 
         let mut gene1_annotations = HashSet::new();
-        gene1_annotations.insert(&annotations[2]);
-        anno_index.entry(genes[1].gene_id.to_string())
-            .or_insert((&genes[1], gene1_annotations));
+        gene1_annotations.insert(AnnoKey(2));
+        anno_index.entry(genes[1].gene_id().to_string())
+            .or_insert((GeneKey(1), gene1_annotations));
 
         let expected_index = Index {
-            genes: &genes,
-            annotations: &annotations,
+            genes,
+            annos,
             gene_index,
             anno_index,
         };
