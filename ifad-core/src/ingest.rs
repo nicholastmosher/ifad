@@ -70,8 +70,7 @@ impl<B: BufRead> Read for MetadataReader<B> {
     }
 }
 
-#[cfg_attr(test, derive(Clone))]
-#[derive(Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct AnnotationRecord {
     pub db: String,
     pub database_id: String,
@@ -111,8 +110,7 @@ impl AnnotationRecord {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(Clone))]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct GeneRecord {
     pub gene_id: String,
     pub gene_product_type: String,

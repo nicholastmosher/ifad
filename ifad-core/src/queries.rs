@@ -8,29 +8,9 @@ use std::borrow::Borrow;
 pub struct QueryResult<IndexRef>
     where IndexRef: Borrow<Index> + Clone,
 {
-    ordered: bool,
     index: IndexRef,
     queried_genes: HashSet<GeneKey>,
     queried_annos: HashSet<AnnoKey>,
-}
-
-enum EitherIter<A: Iterator, B: Iterator> {
-    First(A),
-    Second(B),
-}
-
-impl<A, B, T> Iterator for EitherIter<A, B>
-    where A: Iterator<Item=T>,
-          B: Iterator<Item=T>,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            EitherIter::First(a) => a.next(),
-            EitherIter::Second(b) => b.next(),
-        }
-    }
 }
 
 impl<IndexRef> QueryResult<IndexRef>
@@ -39,32 +19,65 @@ impl<IndexRef> QueryResult<IndexRef>
     pub fn empty(index: IndexRef) -> QueryResult<IndexRef> {
         QueryResult {
             index,
-            ordered: false,
             queried_genes: HashSet::new(),
             queried_annos: HashSet::new(),
         }
     }
 
-    pub fn iter_genes(&self) -> impl Iterator<Item=&Gene> {
-        if self.ordered {
-            EitherIter::First(self.index.borrow().iter_genes()
-                .filter(move |(key, _)| self.queried_genes.contains(key))
-                .map(|(_, gene)| gene))
-        } else {
-            EitherIter::Second(self.queried_genes.iter()
-                .filter_map(move |key| self.index.borrow().get_gene(key)))
+    pub fn iter_genes(&self) -> impl Iterator<Item=Gene> {
+        QueryResultGeneIter {
+            index: self.index.clone(),
+            iter: self.queried_genes.clone().into_iter(),
         }
     }
 
-    pub fn iter_annotations(&self) -> impl Iterator<Item=&Annotation> {
-        if self.ordered {
-            EitherIter::First(self.index.borrow().iter_annotations()
-                .filter(move |(key, _)| self.queried_annos.contains(key))
-                .map(|(_, anno)| anno))
-        } else {
-            EitherIter::Second(self.queried_annos.iter()
-                .filter_map(move |key| self.index.borrow().get_annotation(key)))
+    pub fn iter_annotations(&self) -> impl Iterator<Item=Annotation> {
+        QueryResultAnnotationIter {
+            index: self.index.clone(),
+            iter: self.queried_annos.clone().into_iter(),
         }
+    }
+}
+
+struct QueryResultGeneIter<IndexRef, GKI>
+    where IndexRef: Borrow<Index>,
+          GKI: Iterator<Item=GeneKey>,
+{
+    index: IndexRef,
+    iter: GKI,
+}
+
+impl<IndexRef, GKI> Iterator for QueryResultGeneIter<IndexRef, GKI>
+    where IndexRef: Borrow<Index>,
+          GKI: Iterator<Item=GeneKey>,
+{
+    type Item = Gene;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let gene_key = self.iter.next()?;
+        let gene = self.index.borrow().get_gene(&gene_key);
+        Some(gene.unwrap().clone())
+    }
+}
+
+struct QueryResultAnnotationIter<IndexRef, AKI>
+    where IndexRef: Borrow<Index>,
+          AKI: Iterator<Item=AnnoKey>,
+{
+    index: IndexRef,
+    iter: AKI,
+}
+
+impl<IndexRef, AKI> Iterator for QueryResultAnnotationIter<IndexRef, AKI>
+    where IndexRef: Borrow<Index>,
+          AKI: Iterator<Item=AnnoKey>,
+{
+    type Item = Annotation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let anno_key = self.iter.next()?;
+        let anno = self.index.borrow().get_annotation(&anno_key);
+        Some(anno.unwrap().clone())
     }
 }
 
@@ -120,7 +133,6 @@ impl Segment {
             .collect();
 
         QueryResult {
-            ordered: false,
             index,
             queried_genes,
             queried_annos,
@@ -164,7 +176,6 @@ fn query_all<IndexRef>(index: IndexRef) -> QueryResult<IndexRef>
             .unzip();
 
     QueryResult {
-        ordered: true,
         index,
         queried_genes,
         queried_annos,
@@ -185,7 +196,6 @@ fn union<IndexRef>(
     queried_annos.extend(second.queried_annos);
 
     QueryResult {
-        ordered: first.ordered,
         index,
         queried_genes,
         queried_annos,
@@ -222,7 +232,6 @@ fn intersect<IndexRef>(
         .collect();
 
     QueryResult {
-        ordered: first.ordered,
         index,
         queried_genes,
         queried_annos,
@@ -460,17 +469,6 @@ mod tests {
         ];
         let expected_annotations: HashSet<_> = expected_annotations_vec.into_iter().collect();
         assert_eq!(&expected_annotations, &results.queried_annos);
-    }
-
-    #[test]
-    fn test_query_all_is_ordered() {
-        let index = Index::new(TEST_GENES.clone(), TEST_ANNOTATIONS.clone());
-        let query = Query::All;
-        let results = query.execute(&index);
-
-        // Test that annotations are in the same order
-        results.iter_annotations().zip(TEST_ANNOTATIONS.iter())
-            .for_each(|(actual, expected)| assert_eq!(actual, expected));
     }
 
     #[test]

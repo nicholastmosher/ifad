@@ -1,8 +1,7 @@
 use crate::{Aspect, AnnotationStatus, AnnotationRecord, GeneRecord};
 use crate::index::{GeneKey, AnnoIndex};
 
-#[cfg_attr(test, derive(Clone))]
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub struct Annotation {
     pub record: AnnotationRecord,
     pub invert: bool,
@@ -41,8 +40,7 @@ impl Annotation {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq)]
-#[cfg_attr(test, derive(Clone))]
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub struct Gene {
     pub record: GeneRecord,
 }

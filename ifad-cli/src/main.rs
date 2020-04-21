@@ -143,7 +143,7 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let mut genes_exporter = GafExporter::new(
         gene_metadata.to_string(),
         gene_headers.to_string(),
-        result.iter_genes().map(|gene| &gene.record));
+        result.iter_genes().map(|gene| gene.record));
     genes_exporter.write_all(&mut genes_out).expect("should write genes file");
 
     let mut annotations_out = std::fs::File::create(config.annos_out)
@@ -151,7 +151,7 @@ fn run(args: &ArgMatches) -> Result<(), String> {
     let mut annotations_exporter = GafExporter::new(
         anno_metadata.to_string(),
         anno_headers.to_string(),
-        result.iter_annotations().map(|anno| &anno.record));
+        result.iter_annotations().map(|anno| anno.record));
     annotations_exporter.write_all(&mut annotations_out)
         .map_err(|e| format!("failed to export data as GAF: {:?}", e))?;
 

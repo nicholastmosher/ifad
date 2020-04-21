@@ -6,8 +6,6 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::marker::PhantomPinned;
-use crate::{QueryResult, Index};
-use std::borrow::Borrow;
 
 pub struct GafExporter<I: Iterator> {
     metadata: String,
@@ -64,27 +62,29 @@ impl<W: Write> Write for RefWriter<W> {
 }
 
 #[cfg(feature="async")]
-pub struct StreamingGafExporter<IndexRef>
-    where IndexRef: Borrow<Index> + Clone,
+pub struct StreamingGafExporter<I, T>
+    where I: Iterator<Item=T>,
+          T: Serialize,
 {
     metadata: String,
     csv_header: String,
     header_done: bool,
     buffer: RefWriter<Vec<u8>>,
     csv_writer: csv::Writer<RefWriter<Vec<u8>>>,
-    query_result: QueryResult<IndexRef>,
+    record_iter: I,
     _pin: PhantomPinned,
 }
 
 #[cfg(feature="async")]
-impl<IndexRef> StreamingGafExporter<IndexRef>
-    where IndexRef: Borrow<Index> + Clone,
+impl<I, T> StreamingGafExporter<I, T>
+    where I: Iterator<Item=T>,
+          T: Serialize,
 {
     pub fn new(
         metadata: String,
         csv_header: String,
-        query_result: QueryResult<IndexRef>,
-    ) -> Pin<Box<StreamingGafExporter<IndexRef>>> {
+        record_iter: I,
+    ) -> Pin<Box<StreamingGafExporter<I, T>>> {
         let buffer = RefWriter::new(vec![]);
         let csv_writer = csv::WriterBuilder::new()
             .has_headers(false)
@@ -96,39 +96,17 @@ impl<IndexRef> StreamingGafExporter<IndexRef>
             csv_header,
             header_done: false,
             buffer,
-            query_result,
+            record_iter,
             csv_writer,
             _pin: PhantomPinned,
         })
     }
-
-    // pub fn stream(mut self) -> impl futures::Stream<Item=Result<bytes::Bytes, String>> {
-    //     use futures::{StreamExt, stream, future};
-    //     use bytes::Bytes;
-    //     let metadata_once = stream::once(future::ok(Bytes::from(self.metadata)));
-    //     let header_once = stream::once(future::ok(Bytes::from(self.csv_header)));
-    //
-    //     let mut buffer = Cursor::new(Vec::new());
-    //     let mut csv_writer = csv::WriterBuilder::new()
-    //         .has_headers(false)
-    //         .delimiter(b'\t')
-    //         .from_writer(&mut buffer);
-    //
-    //     let records_stream = stream::iter(self.record_iter.map(|record| {
-    //         csv_writer.serialize(record);
-    //         let inner = std::mem::replace(buffer.get_mut(), Vec::new());
-    //         let bytes = Bytes::from(inner);
-    //         Ok(bytes)
-    //     }));
-    //
-    //     metadata_once.chain(header_once.chain(records_stream))
-    //     // unimplemented!()
-    // }
 }
 
 #[cfg(feature="async")]
-impl<IndexRef> futures::Stream for StreamingGafExporter<IndexRef>
-    where IndexRef: Borrow<Index> + Clone,
+impl<I, T> futures::Stream for StreamingGafExporter<I, T>
+    where I: Iterator<Item=T>,
+          T: Serialize,
 {
     type Item = Result<bytes::Bytes, String>;
 
@@ -151,9 +129,7 @@ impl<IndexRef> futures::Stream for StreamingGafExporter<IndexRef>
         }
 
         mut_self.buffer.writer.as_ref().borrow_mut().clear();
-        let mut record_iter = mut_self.query_result.iter_annotations()
-            .map(|anno| &anno.record);
-        let record = match record_iter.next() {
+        let record = match mut_self.record_iter.next() {
             None => return Poll::Ready(None),
             Some(record) => record,
         };

@@ -70,7 +70,7 @@ async fn index(data: web::Data<ArcSwap<Index>>) -> impl Responder {
     let stream = StreamingGafExporter::new(
         "anno metadata".to_string(),
         "anno_header".to_string(),
-        query_result,
+        query_result.iter_annotations().map(|anno| anno.record),
     ).map(|result| result.map_err(|_| PayloadError::EncodingCorrupted));
 
     HttpResponseBuilder::new(StatusCode::OK)
