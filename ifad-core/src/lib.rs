@@ -46,9 +46,13 @@ impl TryFrom<&str> for Aspect {
 
 #[derive(Debug, Hash, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AnnotationStatus {
+    #[serde(rename = "EXP")]
     KnownExperimental,
+    #[serde(rename = "OTHER")]
     KnownOther,
+    #[serde(rename = "UNKNOWN")]
     Unknown,
+    #[serde(rename = "UNANNOTATED")]
     Unannotated,
 }
 

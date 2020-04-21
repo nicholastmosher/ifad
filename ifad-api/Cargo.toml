@@ -13,4 +13,12 @@ actix-web = "2.0.0"
 futures = "0.3.4"
 arc-swap = "0.4.4"
 dotenv = "0.15.0"
-lazy_static = "1.4.0"
+serde = { version = "1.0.104", features = ["derive"] }
+
+[lib]
+name = "ifad_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ifad-api"
+path = "src/bin/main.rs"

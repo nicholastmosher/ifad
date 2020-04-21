@@ -2,6 +2,7 @@ use crate::{Gene, Annotation, Aspect, AnnotationStatus};
 use crate::index::{GeneKey, AnnoKey, Index};
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use serde::{Deserialize, Serialize};
 use itertools::Itertools;
 use std::borrow::Borrow;
 
@@ -22,6 +23,14 @@ impl<IndexRef> QueryResult<IndexRef>
             queried_genes: HashSet::new(),
             queried_annos: HashSet::new(),
         }
+    }
+
+    pub fn gene_count(&self) -> usize {
+        self.queried_genes.len()
+    }
+
+    pub fn annotation_count(&self) -> usize {
+        self.queried_annos.len()
     }
 
     pub fn iter_genes(&self) -> impl Iterator<Item=Gene> {
@@ -81,10 +90,11 @@ impl<IndexRef, AKI> Iterator for QueryResultAnnotationIter<IndexRef, AKI>
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Segment {
-    aspect: Aspect,
-    annotation_status: AnnotationStatus,
+    pub aspect: Aspect,
+    #[serde(rename = "annotationStatus")]
+    pub annotation_status: AnnotationStatus,
 }
 
 impl TryFrom<(&str, &str)> for Segment {
