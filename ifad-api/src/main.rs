@@ -7,11 +7,6 @@ use actix_web::dev::HttpResponseBuilder;
 use actix_web::http::StatusCode;
 use actix_web::error::PayloadError;
 use std::io::BufReader;
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref INDEX_SWAP: ArcSwap<Index> = ArcSwap::new(Arc::new(Index::empty()));
-}
 
 struct Config {
     genes_file: String,
@@ -62,16 +57,16 @@ fn run() -> Result<(), String> {
         .collect();
 
     let index = Index::new(genes, annotations);
-    INDEX_SWAP.store(Arc::new(index));
-    actix::System::new("ifad").block_on(server().map(|_| ()));
+    let swap = ArcSwap::new(Arc::new(index));
+    actix::System::new("ifad").block_on(server(swap).map(|_| ()));
     Ok(())
 }
 
-async fn index() -> impl Responder {
+async fn index(data: web::Data<ArcSwap<Index>>) -> impl Responder {
     use futures::StreamExt;
 
-    let appdata = INDEX_SWAP.load_full();
-    let query_result = Query::All.execute(appdata);
+    let index = data.get_ref().load_full();
+    let query_result = Query::All.execute(index);
     let stream = StreamingGafExporter::new(
         "anno metadata".to_string(),
         "anno_header".to_string(),
@@ -82,9 +77,10 @@ async fn index() -> impl Responder {
         .streaming(stream)
 }
 
-async fn server() -> std::io::Result<()> {
+async fn server(data: ArcSwap<Index>) -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
+            .data(data.clone())
             .route("/", web::get().to(index))
     })
     .bind("127.0.0.1:8000")?
