@@ -28,6 +28,15 @@ pub struct Index {
 
 impl Index {
 
+    pub fn empty() -> Index {
+        Index {
+            genes: vec![],
+            annos: vec![],
+            gene_index: HashMap::new(),
+            anno_index: HashMap::new(),
+        }
+    }
+
     pub fn new(genes: Vec<Gene>, annos: Vec<Annotation>) -> Index {
         let mut gene_index: GeneIndex = HashMap::new();
         let mut anno_index: AnnoIndex = HashMap::new();

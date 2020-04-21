@@ -3,10 +3,13 @@ use crate::index::{GeneKey, AnnoKey, Index};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use itertools::Itertools;
+use std::borrow::Borrow;
 
-pub struct QueryResult<'a> {
+pub struct QueryResult<IndexRef>
+    where IndexRef: Borrow<Index> + Clone,
+{
     ordered: bool,
-    index: &'a Index,
+    index: IndexRef,
     queried_genes: HashSet<GeneKey>,
     queried_annos: HashSet<AnnoKey>,
 }
@@ -30,8 +33,10 @@ impl<A, B, T> Iterator for EitherIter<A, B>
     }
 }
 
-impl QueryResult<'_> {
-    pub fn empty(index: &Index) -> QueryResult {
+impl<IndexRef> QueryResult<IndexRef>
+    where IndexRef: Borrow<Index> + Clone,
+{
+    pub fn empty(index: IndexRef) -> QueryResult<IndexRef> {
         QueryResult {
             index,
             ordered: false,
@@ -42,23 +47,23 @@ impl QueryResult<'_> {
 
     pub fn iter_genes(&self) -> impl Iterator<Item=&Gene> {
         if self.ordered {
-            EitherIter::First(self.index.iter_genes()
+            EitherIter::First(self.index.borrow().iter_genes()
                 .filter(move |(key, _)| self.queried_genes.contains(key))
                 .map(|(_, gene)| gene))
         } else {
             EitherIter::Second(self.queried_genes.iter()
-                .filter_map(move |key| self.index.get_gene(key)))
+                .filter_map(move |key| self.index.borrow().get_gene(key)))
         }
     }
 
     pub fn iter_annotations(&self) -> impl Iterator<Item=&Annotation> {
         if self.ordered {
-            EitherIter::First(self.index.iter_annotations()
+            EitherIter::First(self.index.borrow().iter_annotations()
                 .filter(move |(key, _)| self.queried_annos.contains(key))
                 .map(|(_, anno)| anno))
         } else {
             EitherIter::Second(self.queried_annos.iter()
-                .filter_map(move |key| self.index.get_annotation(key)))
+                .filter_map(move |key| self.index.borrow().get_annotation(key)))
         }
     }
 }
@@ -84,10 +89,11 @@ impl Segment {
         Segment { aspect, annotation_status }
     }
 
-    pub fn query<'a>(&self, index: &'a Index) -> QueryResult<'a> {
-
+    pub fn query<IndexRef>(&self, index: IndexRef) -> QueryResult<IndexRef>
+        where IndexRef: Borrow<Index> + Clone,
+    {
         // Find all genes belonging to this segment
-        let queried_genes: HashSet<GeneKey> = index.gene_index
+        let queried_genes: HashSet<GeneKey> = index.borrow().gene_index
             .get(&self.aspect)
             .and_then(|statuses| statuses.get(&self.annotation_status))
             .map(IntoIterator::into_iter).into_iter()
@@ -97,15 +103,15 @@ impl Segment {
 
         let queried_annos: HashSet<AnnoKey> = queried_genes.iter()
             .filter_map(|gene_key| {
-                index.get_gene(gene_key)
+                index.borrow().get_gene(gene_key)
                     .and_then(|gene| {
                         let gene_id = &gene.gene_id();
-                        index.anno_index.get(*gene_id)
+                        index.borrow().anno_index.get(*gene_id)
                     })
             })
             .flat_map(|(_, annos)| annos.iter())
             .filter(|anno_key| {
-                index.get_annotation(anno_key)
+                index.borrow().get_annotation(anno_key)
                     .map(|anno| anno.aspect == self.aspect
                         && anno.annotation_status == self.annotation_status)
                     .unwrap_or(false)
@@ -130,24 +136,28 @@ pub enum Query {
 }
 
 impl Query {
-    pub fn execute<'a>(&self, index: &'a Index) -> QueryResult<'a> {
+    pub fn execute<IndexRef>(&self, index: IndexRef) -> QueryResult<IndexRef>
+        where IndexRef: Borrow<Index> + Clone,
+    {
         match self {
             Query::All => query_all(index),
             Query::Union(segments) => segments.iter()
-                .map(|segment| segment.query(index))
-                .fold1(|a, b| union(index, a, b))
+                .map(|segment| segment.query(index.clone()))
+                .fold1(|a, b| union(index.clone(), a, b))
                 .unwrap_or_else(|| QueryResult::empty(index)),
             Query::Intersection(segments) => segments.iter()
-                .map(|segment| segment.query(index))
-                .fold1(|a, b| intersect(index, a, b))
+                .map(|segment| segment.query(index.clone()))
+                .fold1(|a, b| intersect(index.clone(), a, b))
                 .unwrap_or_else(|| QueryResult::empty(index)),
         }
     }
 }
 
-fn query_all(index: &Index) -> QueryResult {
+fn query_all<IndexRef>(index: IndexRef) -> QueryResult<IndexRef>
+    where IndexRef: Borrow<Index> + Clone,
+{
     let (queried_genes, queried_annos): (HashSet<GeneKey>, HashSet<AnnoKey>) =
-        index.anno_index.iter()
+        index.borrow().anno_index.iter()
             .flat_map(|(_, (gene, annos))| {
                 annos.iter().map(move |anno| (gene, anno))
             })
@@ -161,7 +171,13 @@ fn query_all(index: &Index) -> QueryResult {
     }
 }
 
-fn union<'a>(index: &'a Index, first: QueryResult<'a>, second: QueryResult<'a>) -> QueryResult<'a> {
+fn union<IndexRef>(
+    index: IndexRef,
+    first: QueryResult<IndexRef>,
+    second: QueryResult<IndexRef>
+) -> QueryResult<IndexRef>
+    where IndexRef: Borrow<Index> + Clone,
+{
     let mut queried_genes = first.queried_genes;
     let mut queried_annos = first.queried_annos;
 
@@ -176,7 +192,13 @@ fn union<'a>(index: &'a Index, first: QueryResult<'a>, second: QueryResult<'a>) 
     }
 }
 
-fn intersect<'a>(index: &'a Index, first: QueryResult<'a>, second: QueryResult<'a>) -> QueryResult<'a> {
+fn intersect<IndexRef>(
+    index: IndexRef,
+    first: QueryResult<IndexRef>,
+    second: QueryResult<IndexRef>
+) -> QueryResult<IndexRef>
+    where IndexRef: Borrow<Index> + Clone,
+{
     // Take the intersection of the first and second's queried genes
     let queried_genes: HashSet<GeneKey> = first.queried_genes.iter()
         .filter(|gene_key| second.queried_genes.contains(gene_key))
@@ -192,8 +214,8 @@ fn intersect<'a>(index: &'a Index, first: QueryResult<'a>, second: QueryResult<'
     // Keep only annotations that belong to the intersected genes
     let queried_annos: HashSet<AnnoKey> = union_annotations.into_iter()
         .filter(|anno_key| {
-            index.get_annotation(anno_key)
-                .and_then(|anno| anno.gene_in(&index.anno_index))
+            index.borrow().get_annotation(anno_key)
+                .and_then(|anno| anno.gene_in(&index.borrow().anno_index))
                 .map(|gene_key| queried_genes.contains(&gene_key))
                 .unwrap_or(false)
         })
